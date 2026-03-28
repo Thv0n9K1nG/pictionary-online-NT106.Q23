@@ -1,0 +1,16 @@
+# Build folders
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+
+# API Keys (QUAN TRỌNG)
+.env
+appsettings.local.json
+**/secrets.json
+
+# Database local
+*.db
+*.db-journal
