@@ -1,9 +1,10 @@
-namespace Shared.Enums
+﻿namespace Shared.Enums;
+
+public enum GameState
 {
-    public enum GameState
-    {
-        Waiting,
-        Playing,
-        Ended
-    }
+    Waiting = 0,
+    SelectingWord,
+    Drawing,
+    RoundEnd,
+    GameOver
 }
