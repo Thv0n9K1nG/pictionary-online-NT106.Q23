@@ -2,6 +2,28 @@
 
 Đồ án môn Lập trình mạng căn bản.
 
+## Giảng viên hướng đẫn
+
+- Ths. Đỗ Thị Hương Lan
+  
+
+## Thực hiện bởi nhóm 11 gồm:
+
+- Hồ Ngọc Vương Thương - 24521749
+  
+- Phạm Trần Anh Tuấn - 24521939
+  
+- Võ Đình Hoàng Tiến - 24521783
+  
+- Hà Võ Đức Thiện - 24521658
+  
+
+## Lớp
+
+NT106.Q23.ANTT
+
+---
+
 ## Architecture
 
 Gateway-centric multi-server architecture:
