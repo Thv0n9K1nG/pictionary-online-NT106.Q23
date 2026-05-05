@@ -45,7 +45,7 @@ public sealed class LoginForm : Form
         var ipInput = new TextBox { Text = "127.0.0.1", Left = 120, Top = 97, Width = 150 };
 
         var portLabel = new Label { Text = "Port:", Left = 30, Top = 130, AutoSize = true };
-        var portInput = new TextBox { Text = "8080", Left = 120, Top = 127, Width = 80 };
+        var portInput = new TextBox { Text = "5000", Left = 120, Top = 127, Width = 80 };
 
         // --- CÁC TRƯỜNG NHẬP LIỆU TÀI KHOẢN (MỚI) ---
         var userLabel = new Label { Text = "Username:", Left = 30, Top = 160, AutoSize = true };
