@@ -25,6 +25,10 @@ public sealed class RoomManager
         return _rooms.TryGetValue(roomCode, out room);
     }
 
+    public int ActiveRoomCount => _rooms.Count;
+
+    public int ActivePlayerCount => _rooms.Values.Sum(room => room.Players.Count);
+
     public IReadOnlyList<RoomInfo> GetWaitingRooms()
     {
         return _rooms.Values
