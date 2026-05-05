@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Json;
+using Gateway.Managers;
+using Gateway.Services;
 using Shared.Enums;
 using Shared.Models;
 
@@ -13,6 +15,8 @@ namespace Gateway.Handlers;
 public sealed class ClientHandler
 {
     private readonly Stream _stream;
+    private readonly AuthService? _authService;
+    private readonly SessionDirectory? _sessionDirectory;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
     public string ConnectionId { get; } = Guid.NewGuid().ToString("N");
@@ -26,6 +30,23 @@ public sealed class ClientHandler
     public ClientHandler(Stream stream)
     {
         _stream = stream;
+    }
+
+    public ClientHandler(
+        System.Net.Sockets.TcpClient tcpClient,
+        Stream stream,
+        AuthService authService,
+        SessionDirectory sessionDirectory)
+        : this(stream, authService, sessionDirectory)
+    {
+        _ = tcpClient;
+    }
+
+    public ClientHandler(Stream stream, AuthService authService, SessionDirectory sessionDirectory)
+    {
+        _stream = stream;
+        _authService = authService;
+        _sessionDirectory = sessionDirectory;
     }
 
     public async Task SendAsync(GameMessage message, CancellationToken cancellationToken = default)
@@ -89,28 +110,186 @@ public sealed class ClientHandler
         }
     }
 
-    private Task HandleLineAsync(string line, CancellationToken cancellationToken)
+    private async Task HandleLineAsync(string line, CancellationToken cancellationToken)
     {
-        _ = cancellationToken;
-
         try
         {
             var message = ParseGameMessage(line);
             Console.WriteLine($"[Gateway][Client:{ShortId}] Message type = {message.Type}");
 
-            // Stage 1 stops here. Stage 2 will add:
-            // Register/Login -> AuthService
-            // Other message types -> validate session -> ProxyRouter
+            switch (message.Type)
+            {
+                case MessageType.Register:
+                    await HandleRegisterAsync(message, cancellationToken);
+                    break;
+
+                case MessageType.Login:
+                    await HandleLoginAsync(message, cancellationToken);
+                    break;
+
+                default:
+                    Console.WriteLine($"[Gateway][Client:{ShortId}] Message type = {message.Type} (not handled in Stage 2)");
+                    break;
+            }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Gateway][Client:{ShortId}] Invalid message. Error: {ex.Message}");
         }
-
-        return Task.CompletedTask;
     }
 
     private string ShortId => ConnectionId.Length <= 8 ? ConnectionId : ConnectionId[..8];
+
+    private async Task HandleRegisterAsync(GameMessage message, CancellationToken cancellationToken)
+    {
+        if (_authService is null)
+        {
+            await SendAsync(CreateError(MessageType.RegisterFailed, "AuthService is not configured."), cancellationToken);
+            return;
+        }
+
+        var credentials = ReadCredentials(message.Payload);
+        var validationError = ValidateCredentials(credentials.Username, credentials.Password);
+        if (validationError is not null)
+        {
+            await SendAsync(CreateError(MessageType.RegisterFailed, validationError), cancellationToken);
+            return;
+        }
+
+        try
+        {
+            var userId = await _authService.RegisterAsync(credentials.Username, credentials.Password, cancellationToken);
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Register success: username={credentials.Username}, userId={userId}");
+
+            await SendAsync(new GameMessage
+            {
+                Type = MessageType.RegisterSuccess,
+                Payload = new
+                {
+                    userId,
+                    playerId = userId,
+                    username = credentials.Username
+                }
+            }, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Register failed: {ex.Message}");
+            await SendAsync(CreateError(MessageType.RegisterFailed, "Username already exists or registration data is invalid."), cancellationToken);
+        }
+    }
+
+    private async Task HandleLoginAsync(GameMessage message, CancellationToken cancellationToken)
+    {
+        if (_authService is null || _sessionDirectory is null)
+        {
+            await SendAsync(CreateError(MessageType.LoginFailed, "AuthService is not configured."), cancellationToken);
+            return;
+        }
+
+        var credentials = ReadCredentials(message.Payload);
+        var validationError = ValidateCredentials(credentials.Username, credentials.Password);
+        if (validationError is not null)
+        {
+            await SendAsync(CreateError(MessageType.LoginFailed, validationError), cancellationToken);
+            return;
+        }
+
+        var sessionId = await _authService.LoginAsync(credentials.Username, credentials.Password, cancellationToken);
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Login failed: username={credentials.Username}");
+            await SendAsync(CreateError(MessageType.LoginFailed, "Invalid username or password."), cancellationToken);
+            return;
+        }
+
+        var userId = ExtractUserIdFromSessionId(sessionId);
+        var session = new SessionInfo(
+            SessionId: sessionId,
+            UserId: userId,
+            PlayerId: userId,
+            RoomCode: null,
+            CreatedAt: DateTimeOffset.UtcNow,
+            ExpiresAt: null);
+
+        _sessionDirectory.Set(session);
+        Console.WriteLine($"[Gateway][Client:{ShortId}] Login success: username={credentials.Username}, userId={userId}");
+
+        await SendAsync(new GameMessage
+        {
+            Type = MessageType.LoginSuccess,
+            Payload = new
+            {
+                sessionId,
+                userId,
+                playerId = userId,
+                username = credentials.Username
+            }
+        }, cancellationToken);
+    }
+
+    private static (string Username, string Password) ReadCredentials(object? payload)
+    {
+        if (payload is JsonElement element)
+        {
+            return (
+                ReadStringProperty(element, "username") ?? string.Empty,
+                ReadStringProperty(element, "password") ?? string.Empty);
+        }
+
+        if (payload is null)
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var json = JsonSerializer.Serialize(payload, GameMessage.JsonOptions);
+        using var doc = JsonDocument.Parse(json);
+        return (
+            ReadStringProperty(doc.RootElement, "username") ?? string.Empty,
+            ReadStringProperty(doc.RootElement, "password") ?? string.Empty);
+    }
+
+    private static string? ReadStringProperty(JsonElement element, string name)
+    {
+        return TryGetPropertyIgnoreCase(element, name, out var property)
+            ? property.ValueKind == JsonValueKind.String ? property.GetString() : property.ToString()
+            : null;
+    }
+
+    private static string? ValidateCredentials(string username, string password)
+    {
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+        {
+            return "Username and password are required.";
+        }
+
+        if (username.Trim().Length < 3)
+        {
+            return "Username must be at least 3 characters.";
+        }
+
+        if (password.Length < 6)
+        {
+            return "Password must be at least 6 characters.";
+        }
+
+        return null;
+    }
+
+    private static string ExtractUserIdFromSessionId(string sessionId)
+    {
+        var separatorIndex = sessionId.IndexOf(':');
+        return separatorIndex > 0 ? sessionId[..separatorIndex] : sessionId;
+    }
+
+    private static GameMessage CreateError(MessageType type, string message)
+    {
+        return new GameMessage
+        {
+            Type = type,
+            Payload = new { message }
+        };
+    }
 
     private static GameMessage ParseGameMessage(string json)
     {

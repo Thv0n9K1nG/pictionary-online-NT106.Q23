@@ -25,6 +25,7 @@ public sealed class GatewayServer
     private readonly SessionDirectory _sessionDirectory = new();
     private readonly CheckpointStore _checkpointStore = new();
     private readonly TlsServerFactory _tlsServerFactory = new();
+    private AuthService? _authService;
 
     public GatewayServer(int clientPort = 5000, int gameServerPort = 6000)
     {
@@ -42,6 +43,8 @@ public sealed class GatewayServer
         var userRepository = new UserRepository("Data Source=pictionary.db");
         await userRepository.InitializeAsync(cancellationToken);
 
+        var sessionService = new SessionService();
+        _authService = new AuthService(userRepository, sessionService);
         var loadBalancer = new LoadBalancer(_nodeRegistry);
         var proxyRouter = new ProxyRouter(_roomDirectory, _sessionDirectory);
         var recoveryCoordinator = new RecoveryCoordinator(_nodeRegistry, _roomDirectory, _checkpointStore);
@@ -107,7 +110,12 @@ public sealed class GatewayServer
             using (var tlsStream = await _tlsServerFactory.AuthenticateAsServerAsync(tcpClient, cancellationToken))
             {
                 Console.WriteLine($"[Gateway] Client connected over TLS: {remote}");
-                var handler = new ClientHandler(tcpClient, tlsStream);
+                if (_authService is null)
+                {
+                    throw new InvalidOperationException("AuthService has not been initialized.");
+                }
+
+                var handler = new ClientHandler(tcpClient, tlsStream, _authService, _sessionDirectory);
                 await handler.HandleAsync(cancellationToken);
             }
         }
