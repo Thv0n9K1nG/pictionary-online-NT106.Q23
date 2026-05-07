@@ -8,9 +8,8 @@ using Shared.Models;
 namespace Gateway.Handlers;
 
 /// <summary>
-/// Handles one Client connection after TLS has been established by GatewayServer.
-/// Stage 1 only logs incoming GameMessage type. Stage 2 will route REGISTER/LOGIN
-/// to AuthService and later relay room/gameplay messages to ProxyRouter.
+/// Quản lý kết nối của một Client sau khi đã thiết lập TLS.
+/// Thực hiện xác thực (Register/Login) và quản lý phiên làm việc.
 /// </summary>
 public sealed class ClientHandler
 {
@@ -21,27 +20,6 @@ public sealed class ClientHandler
 
     public string ConnectionId { get; } = Guid.NewGuid().ToString("N");
 
-    public ClientHandler(System.Net.Sockets.TcpClient tcpClient, Stream stream)
-        : this(stream)
-    {
-        _ = tcpClient;
-    }
-
-    public ClientHandler(Stream stream)
-    {
-        _stream = stream;
-    }
-
-    public ClientHandler(
-        System.Net.Sockets.TcpClient tcpClient,
-        Stream stream,
-        AuthService authService,
-        SessionDirectory sessionDirectory)
-        : this(stream, authService, sessionDirectory)
-    {
-        _ = tcpClient;
-    }
-
     public ClientHandler(Stream stream, AuthService authService, SessionDirectory sessionDirectory)
     {
         _stream = stream;
@@ -49,6 +27,9 @@ public sealed class ClientHandler
         _sessionDirectory = sessionDirectory;
     }
 
+    /// <summary>
+    /// Gửi gói tin JSON về phía Client.
+    /// </summary>
     public async Task SendAsync(GameMessage message, CancellationToken cancellationToken = default)
     {
         var line = message.ToJsonLine();
@@ -66,24 +47,35 @@ public sealed class ClientHandler
         }
     }
 
+    /// <summary>
+    /// Vòng lặp chính đọc dữ liệu từ Socket.
+    /// </summary>
     public async Task HandleAsync(CancellationToken cancellationToken = default)
     {
         var readBuffer = new byte[4096];
         var textBuffer = new StringBuilder();
 
-        Console.WriteLine($"[Gateway][Client:{ShortId}] Handler started.");
+        Console.WriteLine($"[Gateway][Client:{ShortId}] Bắt đầu xử lý kết nối.");
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var bytesRead = await _stream.ReadAsync(readBuffer.AsMemory(0, readBuffer.Length), cancellationToken);
-            if (bytesRead == 0)
+            try
             {
-                Console.WriteLine($"[Gateway][Client:{ShortId}] Remote closed connection.");
+                var bytesRead = await _stream.ReadAsync(readBuffer.AsMemory(0, readBuffer.Length), cancellationToken);
+                if (bytesRead == 0)
+                {
+                    Console.WriteLine($"[Gateway][Client:{ShortId}] Client đã ngắt kết nối.");
+                    break;
+                }
+
+                textBuffer.Append(Encoding.UTF8.GetString(readBuffer, 0, bytesRead));
+                await ProcessBufferedLinesAsync(textBuffer, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Gateway][Client:{ShortId}] Lỗi đọc stream: {ex.Message}");
                 break;
             }
-
-            textBuffer.Append(Encoding.UTF8.GetString(readBuffer, 0, bytesRead));
-            await ProcessBufferedLinesAsync(textBuffer, cancellationToken);
         }
     }
 
@@ -93,20 +85,15 @@ public sealed class ClientHandler
         {
             var current = textBuffer.ToString();
             var newlineIndex = current.IndexOf('\n');
-            if (newlineIndex < 0)
-            {
-                return;
-            }
+            if (newlineIndex < 0) return;
 
             var line = current[..newlineIndex].TrimEnd('\r').TrimStart('\uFEFF');
             textBuffer.Remove(0, newlineIndex + 1);
 
-            if (string.IsNullOrWhiteSpace(line))
+            if (!string.IsNullOrWhiteSpace(line))
             {
-                continue;
+                await HandleLineAsync(line, cancellationToken);
             }
-
-            await HandleLineAsync(line, cancellationToken);
         }
     }
 
@@ -115,7 +102,7 @@ public sealed class ClientHandler
         try
         {
             var message = ParseGameMessage(line);
-            Console.WriteLine($"[Gateway][Client:{ShortId}] Message type = {message.Type}");
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Nhận tin nhắn: {message.Type}");
 
             switch (message.Type)
             {
@@ -128,28 +115,26 @@ public sealed class ClientHandler
                     break;
 
                 default:
-                    Console.WriteLine($"[Gateway][Client:{ShortId}] Message type = {message.Type} (not handled in Stage 2)");
+                    // Trong các giai đoạn sau, các tin nhắn gameplay (vẽ, chat) 
+                    // sẽ được chuyển tiếp qua ProxyRouter tại đây.
+                    Console.WriteLine($"[Gateway][Client:{ShortId}] Loại tin nhắn {message.Type} chưa được hỗ trợ xử lý.");
                     break;
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Gateway][Client:{ShortId}] Invalid message. Error: {ex.Message}");
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Lỗi xử lý gói tin: {ex.Message}");
         }
     }
 
-    private string ShortId => ConnectionId.Length <= 8 ? ConnectionId : ConnectionId[..8];
-
     private async Task HandleRegisterAsync(GameMessage message, CancellationToken cancellationToken)
     {
-        if (_authService is null)
-        {
-            await SendAsync(CreateError(MessageType.RegisterFailed, "AuthService is not configured."), cancellationToken);
-            return;
-        }
+        if (_authService is null) return;
 
-        var credentials = ReadCredentials(message.Payload);
-        var validationError = ValidateCredentials(credentials.Username, credentials.Password);
+        var (username, password) = ReadCredentials(message.Payload);
+
+        // 1. Validate dữ liệu đầu vào
+        var validationError = ValidateCredentials(username, password);
         if (validationError is not null)
         {
             await SendAsync(CreateError(MessageType.RegisterFailed, validationError), cancellationToken);
@@ -158,75 +143,65 @@ public sealed class ClientHandler
 
         try
         {
-            var userId = await _authService.RegisterAsync(credentials.Username, credentials.Password, cancellationToken);
-            Console.WriteLine($"[Gateway][Client:{ShortId}] Register success: username={credentials.Username}, userId={userId}");
+            // 2. Gọi AuthService thực hiện Hash + Insert DB
+            var userId = await _authService.RegisterAsync(username, password, cancellationToken);
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Đăng ký thành công: {username}");
 
+            // 3. Trả về REGISTER_SUCCESS
             await SendAsync(new GameMessage
             {
                 Type = MessageType.RegisterSuccess,
-                Payload = new
-                {
-                    userId,
-                    playerId = userId,
-                    username = credentials.Username
-                }
+                Payload = new { userId, playerId = userId, username }
             }, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine($"[Gateway][Client:{ShortId}] Register failed: {ex.Message}");
-            await SendAsync(CreateError(MessageType.RegisterFailed, "Username already exists or registration data is invalid."), cancellationToken);
+            // Thường là lỗi UNIQUE constraint do trùng username trong DB
+            await SendAsync(CreateError(MessageType.RegisterFailed, "Tên đăng nhập đã tồn tại hoặc dữ liệu không hợp lệ."), cancellationToken);
         }
     }
 
     private async Task HandleLoginAsync(GameMessage message, CancellationToken cancellationToken)
     {
-        if (_authService is null || _sessionDirectory is null)
-        {
-            await SendAsync(CreateError(MessageType.LoginFailed, "AuthService is not configured."), cancellationToken);
-            return;
-        }
+        if (_authService is null || _sessionDirectory is null) return;
 
-        var credentials = ReadCredentials(message.Payload);
-        var validationError = ValidateCredentials(credentials.Username, credentials.Password);
-        if (validationError is not null)
-        {
-            await SendAsync(CreateError(MessageType.LoginFailed, validationError), cancellationToken);
-            return;
-        }
+        var (username, password) = ReadCredentials(message.Payload);
 
-        var sessionId = await _authService.LoginAsync(credentials.Username, credentials.Password, cancellationToken);
+        // 1. Gọi AuthService để Verify BCrypt và tạo SessionId
+        var sessionId = await _authService.LoginAsync(username, password, cancellationToken);
+
         if (string.IsNullOrWhiteSpace(sessionId))
         {
-            Console.WriteLine($"[Gateway][Client:{ShortId}] Login failed: username={credentials.Username}");
-            await SendAsync(CreateError(MessageType.LoginFailed, "Invalid username or password."), cancellationToken);
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Đăng nhập thất bại: {username}");
+            await SendAsync(CreateError(MessageType.LoginFailed, "Tài khoản hoặc mật khẩu không chính xác."), cancellationToken);
             return;
         }
 
         var userId = ExtractUserIdFromSessionId(sessionId);
+
+        // 2. Lưu vào SessionDirectory (RAM) để quản lý các gói tin tiếp theo
         var session = new SessionInfo(
             SessionId: sessionId,
             UserId: userId,
             PlayerId: userId,
             RoomCode: null,
             CreatedAt: DateTimeOffset.UtcNow,
-            ExpiresAt: null);
+            ExpiresAt: DateTimeOffset.UtcNow.AddHours(4)); // Session mặc định hết hạn sau 4h
 
         _sessionDirectory.Set(session);
-        Console.WriteLine($"[Gateway][Client:{ShortId}] Login success: username={credentials.Username}, userId={userId}");
+        Console.WriteLine($"[Gateway][Client:{ShortId}] Đăng nhập thành công: {username}");
 
+        // 3. Trả về LOGIN_SUCCESS kèm sessionId và thông tin định danh
         await SendAsync(new GameMessage
         {
             Type = MessageType.LoginSuccess,
-            Payload = new
-            {
-                sessionId,
-                userId,
-                playerId = userId,
-                username = credentials.Username
-            }
+            Payload = new { sessionId, userId, playerId = userId, username }
         }, cancellationToken);
     }
+
+    #region Helpers
+
+    private string ShortId => ConnectionId.Length <= 8 ? ConnectionId : ConnectionId[..8];
 
     private static (string Username, string Password) ReadCredentials(object? payload)
     {
@@ -236,43 +211,27 @@ public sealed class ClientHandler
                 ReadStringProperty(element, "username") ?? string.Empty,
                 ReadStringProperty(element, "password") ?? string.Empty);
         }
-
-        if (payload is null)
-        {
-            return (string.Empty, string.Empty);
-        }
-
-        var json = JsonSerializer.Serialize(payload, GameMessage.JsonOptions);
-        using var doc = JsonDocument.Parse(json);
-        return (
-            ReadStringProperty(doc.RootElement, "username") ?? string.Empty,
-            ReadStringProperty(doc.RootElement, "password") ?? string.Empty);
+        return (string.Empty, string.Empty);
     }
 
     private static string? ReadStringProperty(JsonElement element, string name)
     {
-        return TryGetPropertyIgnoreCase(element, name, out var property)
-            ? property.ValueKind == JsonValueKind.String ? property.GetString() : property.ToString()
-            : null;
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() : property.Value.ToString();
+            }
+        }
+        return null;
     }
 
     private static string? ValidateCredentials(string username, string password)
     {
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
-        {
-            return "Username and password are required.";
-        }
-
-        if (username.Trim().Length < 3)
-        {
-            return "Username must be at least 3 characters.";
-        }
-
-        if (password.Length < 6)
-        {
-            return "Password must be at least 6 characters.";
-        }
-
+        if (string.IsNullOrWhiteSpace(username) || username.Length < 3)
+            return "Tên đăng nhập phải có ít nhất 3 ký tự.";
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 6)
+            return "Mật khẩu phải có ít nhất 6 ký tự.";
         return null;
     }
 
@@ -284,137 +243,14 @@ public sealed class ClientHandler
 
     private static GameMessage CreateError(MessageType type, string message)
     {
-        return new GameMessage
-        {
-            Type = type,
-            Payload = new { message }
-        };
+        return new GameMessage { Type = type, Payload = new { message } };
     }
 
     private static GameMessage ParseGameMessage(string json)
     {
-        // Fast path: supports the baseline numeric enum format generated by GameMessage.ToJsonLine().
-        try
-        {
-            var baselineMessage = GameMessage.FromJson(json);
-            if (baselineMessage is not null && baselineMessage.Type != MessageType.Unknown)
-            {
-                return baselineMessage;
-            }
-        }
-        catch
-        {
-            // Fall back to document-friendly string types such as "CREATE_ROOM".
-        }
-
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        if (!TryGetPropertyIgnoreCase(root, "type", out var typeElement))
-        {
-            throw new InvalidOperationException("Missing 'type' property.");
-        }
-
-        var type = ParseMessageType(typeElement);
-        object? payload = null;
-        if (TryGetPropertyIgnoreCase(root, "payload", out var payloadElement))
-        {
-            payload = payloadElement.Clone();
-        }
-
-        string? senderId = null;
-        if (TryGetPropertyIgnoreCase(root, "senderId", out var senderElement))
-        {
-            senderId = senderElement.ValueKind == JsonValueKind.String ? senderElement.GetString() : senderElement.ToString();
-        }
-
-        var timestamp = DateTimeOffset.UtcNow;
-        if (TryGetPropertyIgnoreCase(root, "timestamp", out var timestampElement))
-        {
-            timestamp = ParseTimestamp(timestampElement);
-        }
-
-        return new GameMessage
-        {
-            Type = type,
-            Payload = payload,
-            SenderId = senderId,
-            Timestamp = timestamp
-        };
+        var msg = GameMessage.FromJson(json);
+        return msg ?? throw new InvalidOperationException("Không thể giải mã gói tin JSON.");
     }
 
-    private static MessageType ParseMessageType(JsonElement element)
-    {
-        if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var number))
-        {
-            return Enum.IsDefined(typeof(MessageType), number) ? (MessageType)number : MessageType.Unknown;
-        }
-
-        var raw = element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString();
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return MessageType.Unknown;
-        }
-
-        if (Enum.TryParse<MessageType>(raw, ignoreCase: true, out var direct))
-        {
-            return direct;
-        }
-
-        var normalized = NormalizeToken(raw);
-        foreach (var value in Enum.GetValues<MessageType>())
-        {
-            if (NormalizeToken(value.ToString()) == normalized)
-            {
-                return value;
-            }
-        }
-
-        return MessageType.Unknown;
-    }
-
-    private static DateTimeOffset ParseTimestamp(JsonElement element)
-    {
-        if (element.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(element.GetString(), out var parsed))
-        {
-            return parsed;
-        }
-
-        if (element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var unix))
-        {
-            return unix > 9_999_999_999
-                ? DateTimeOffset.FromUnixTimeMilliseconds(unix)
-                : DateTimeOffset.FromUnixTimeSeconds(unix);
-        }
-
-        return DateTimeOffset.UtcNow;
-    }
-
-    private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var property in element.EnumerateObject())
-            {
-                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    value = property.Value;
-                    return true;
-                }
-            }
-        }
-
-        value = default;
-        return false;
-    }
-
-    private static string NormalizeToken(string value)
-    {
-        var chars = value
-            .Where(char.IsLetterOrDigit)
-            .Select(char.ToLowerInvariant)
-            .ToArray();
-        return new string(chars);
-    }
-
+    #endregion
 }
