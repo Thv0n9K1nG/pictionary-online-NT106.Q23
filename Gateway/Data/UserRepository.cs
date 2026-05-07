@@ -128,6 +128,34 @@ public sealed class UserRepository
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task UpdateLastLoginAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Users SET lastLoginAt = $lastLoginAt WHERE userId = $userId";
+        command.Parameters.AddWithValue("$userId", userId);
+        command.Parameters.AddWithValue("$lastLoginAt", DateTimeOffset.UtcNow.ToString("O"));
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task SaveSessionAsync(string sessionId, string userId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText = @"INSERT INTO Sessions (sessionId, userId, createdAt) 
+                            VALUES ($sid, $uid, $cat)";
+        command.Parameters.AddWithValue("$sid", sessionId);
+        command.Parameters.AddWithValue("$uid", userId);
+        command.Parameters.AddWithValue("$cat", DateTimeOffset.UtcNow.ToString("O"));
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<UserRecord?> FindUserByUsernameAsync(string username, CancellationToken cancellationToken = default)
     {
         await using var connection = new SqliteConnection(_connectionString);

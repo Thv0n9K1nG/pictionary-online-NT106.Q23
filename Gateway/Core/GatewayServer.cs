@@ -9,21 +9,24 @@ using Gateway.Services;
 namespace Gateway.Core;
 
 /// <summary>
-/// Gateway entry point for the system.
-/// Stage 1 responsibility:
-/// - Listen for Client connections on a TLS port.
-/// - Listen for GameServer node connections on an internal plaintext TCP port.
-/// - Spawn one handler per accepted connection.
+/// Điểm vào chính của hệ thống Gateway.
+/// Trách nhiệm:
+/// - Lắng nghe kết nối từ Client qua cổng TLS (Bảo mật).
+/// - Lắng nghe kết nối từ GameServer qua cổng TCP nội bộ.
+/// - Khởi tạo và quản lý vòng đời của các Handler.
 /// </summary>
 public sealed class GatewayServer
 {
     private readonly int _clientPort;
     private readonly int _gameServerPort;
 
+    // Quản lý trạng thái trong bộ nhớ RAM
     private readonly NodeRegistry _nodeRegistry = new();
     private readonly RoomDirectory _roomDirectory = new();
     private readonly SessionDirectory _sessionDirectory = new();
     private readonly CheckpointStore _checkpointStore = new();
+
+    // Các công cụ hỗ trợ kết nối và bảo mật
     private readonly TlsServerFactory _tlsServerFactory = new();
     private AuthService? _authService;
 
@@ -35,25 +38,29 @@ public sealed class GatewayServer
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        Console.WriteLine($"[Gateway] Starting");
-        Console.WriteLine($"[Gateway] Client TLS port     : {_clientPort}");
-        Console.WriteLine($"[Gateway] GameServer TCP port: {_gameServerPort}");
+        Console.WriteLine($"[Gateway] Đang khởi động hệ thống...");
+        Console.WriteLine($"[Gateway] Cổng TLS cho Client     : {_clientPort}");
+        Console.WriteLine($"[Gateway] Cổng TCP cho GameServer : {_gameServerPort}");
 
-        // Keep baseline services initialized so Stage 2/3 can continue from here.
+        // 1. Khởi tạo Database (Lớp Dữ liệu)
         var userRepository = new UserRepository("Data Source=pictionary.db");
         await userRepository.InitializeAsync(cancellationToken);
+        Console.WriteLine("[Gateway] Database SQLite đã sẵn sàng.");
 
+        // 2. Khởi tạo các Dịch vụ Nghiệp vụ (Lớp Service)
         var sessionService = new SessionService();
         _authService = new AuthService(userRepository, sessionService);
+
         var loadBalancer = new LoadBalancer(_nodeRegistry);
         var proxyRouter = new ProxyRouter(_roomDirectory, _sessionDirectory);
         var recoveryCoordinator = new RecoveryCoordinator(_nodeRegistry, _roomDirectory, _checkpointStore);
 
-        Console.WriteLine("[Gateway] Services initialized:");
-        Console.WriteLine($"  - {loadBalancer.GetType().Name}");
-        Console.WriteLine($"  - {proxyRouter.GetType().Name}");
-        Console.WriteLine($"  - {recoveryCoordinator.GetType().Name}");
+        Console.WriteLine("[Gateway] Các dịch vụ nội bộ đã khởi tạo:");
+        Console.WriteLine($"  - Xác thực người dùng (AuthService)");
+        Console.WriteLine($"  - Cân bằng tải ({loadBalancer.GetType().Name})");
+        Console.WriteLine($"  - Định tuyến tin nhắn ({proxyRouter.GetType().Name})");
 
+        // 3. Khởi tạo bộ lắng nghe (Listeners)
         var clientListener = _tlsServerFactory.CreateListener(_clientPort);
         var gameServerListener = new TcpListener(IPAddress.Any, _gameServerPort);
 
@@ -62,12 +69,17 @@ public sealed class GatewayServer
             clientListener.Start();
             gameServerListener.Start();
 
-            Console.WriteLine("[Gateway] Listening for clients and GameServer nodes...");
+            Console.WriteLine("[Gateway] Đang chờ kết nối từ Clients và GameServers...");
 
+            // Chạy song song hai luồng chấp nhận kết nối
             var clientAcceptLoop = AcceptClientsAsync(clientListener, cancellationToken);
             var gameServerAcceptLoop = AcceptGameServersAsync(gameServerListener, cancellationToken);
 
             await Task.WhenAll(clientAcceptLoop, gameServerAcceptLoop);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Gateway] Lỗi nghiêm trọng khi chạy Server: {ex.Message}");
         }
         finally
         {
@@ -83,19 +95,12 @@ public sealed class GatewayServer
             try
             {
                 var tcpClient = await listener.AcceptTcpClientAsync(cancellationToken);
+                // Tạo một Task riêng để xử lý mỗi Client, tránh làm nghẽn luồng chấp nhận
                 _ = Task.Run(() => HandleClientConnectionAsync(tcpClient, cancellationToken), CancellationToken.None);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (Exception ex) when (!(ex is OperationCanceledException))
             {
-                break;
-            }
-            catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Gateway][ClientAccept] Error: {ex.Message}");
+                Console.WriteLine($"[Gateway][ClientAccept] Lỗi chấp nhận kết nối: {ex.Message}");
             }
         }
     }
@@ -107,25 +112,24 @@ public sealed class GatewayServer
         try
         {
             using (tcpClient)
+            // Thiết lập bắt tay TLS (Handshake) trước khi truyền nhận dữ liệu
             using (var tlsStream = await _tlsServerFactory.AuthenticateAsServerAsync(tcpClient, cancellationToken))
             {
-                Console.WriteLine($"[Gateway] Client connected over TLS: {remote}");
+                Console.WriteLine($"[Gateway] Client kết nối an toàn (TLS): {remote}");
+
                 if (_authService is null)
                 {
-                    throw new InvalidOperationException("AuthService has not been initialized.");
+                    throw new InvalidOperationException("AuthService chưa được khởi tạo.");
                 }
 
-                var handler = new ClientHandler(tcpClient, tlsStream, _authService, _sessionDirectory);
+                // Truyền đầy đủ dịch vụ vào Handler để xử lý Login/Register
+                var handler = new ClientHandler(tlsStream, _authService, _sessionDirectory);
                 await handler.HandleAsync(cancellationToken);
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (!(ex is OperationCanceledException))
         {
-            // Normal shutdown.
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Gateway][Client:{remote}] Disconnected/Error: {ex.Message}");
+            Console.WriteLine($"[Gateway][Client:{remote}] Ngắt kết nối/Lỗi: {ex.Message}");
         }
     }
 
@@ -138,17 +142,9 @@ public sealed class GatewayServer
                 var tcpClient = await listener.AcceptTcpClientAsync(cancellationToken);
                 _ = Task.Run(() => HandleGameServerConnectionAsync(tcpClient, cancellationToken), CancellationToken.None);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (Exception ex) when (!(ex is OperationCanceledException))
             {
-                break;
-            }
-            catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Gateway][GameServerAccept] Error: {ex.Message}");
+                Console.WriteLine($"[Gateway][GameServerAccept] Lỗi chấp nhận kết nối: {ex.Message}");
             }
         }
     }
@@ -162,18 +158,16 @@ public sealed class GatewayServer
             using (tcpClient)
             using (var stream = tcpClient.GetStream())
             {
-                Console.WriteLine($"[Gateway] GameServer TCP connection accepted: {remote}");
+                Console.WriteLine($"[Gateway] GameServer kết nối (TCP): {remote}");
+
+                // GameServer kết nối nội bộ nên dùng stream trực tiếp (plaintext)
                 var handler = new GameServerHandler(tcpClient, stream, _nodeRegistry);
                 await handler.HandleAsync(cancellationToken);
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (!(ex is OperationCanceledException))
         {
-            // Normal shutdown.
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Gateway][GameServer:{remote}] Disconnected/Error: {ex.Message}");
+            Console.WriteLine($"[Gateway][GameServer:{remote}] Ngắt kết nối/Lỗi: {ex.Message}");
         }
     }
 }
