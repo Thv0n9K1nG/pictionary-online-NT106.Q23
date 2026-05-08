@@ -248,8 +248,105 @@ public sealed class ClientHandler
 
     private static GameMessage ParseGameMessage(string json)
     {
-        var msg = GameMessage.FromJson(json);
-        return msg ?? throw new InvalidOperationException("Không thể giải mã gói tin JSON.");
+        try
+        {
+            var baselineMessage = GameMessage.FromJson(json);
+            if (baselineMessage is not null && baselineMessage.Type != MessageType.Unknown)
+            {
+                return baselineMessage;
+            }
+        }
+        catch
+        {
+            // Fall back to document-friendly string message types such as "Register" or "LOGIN".
+        }
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        if (!TryGetPropertyIgnoreCase(root, "type", out var typeElement))
+        {
+            throw new InvalidOperationException("Missing 'type' property.");
+        }
+
+        object? payload = null;
+        if (TryGetPropertyIgnoreCase(root, "payload", out var payloadElement))
+        {
+            payload = payloadElement.Clone();
+        }
+
+        string? senderId = null;
+        if (TryGetPropertyIgnoreCase(root, "senderId", out var senderElement))
+        {
+            senderId = senderElement.ValueKind == JsonValueKind.String
+                ? senderElement.GetString()
+                : senderElement.ToString();
+        }
+
+        return new GameMessage
+        {
+            Type = ParseMessageType(typeElement),
+            Payload = payload,
+            SenderId = senderId,
+            Timestamp = DateTimeOffset.UtcNow
+        };
+    }
+
+    private static MessageType ParseMessageType(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var number))
+        {
+            return Enum.IsDefined(typeof(MessageType), number) ? (MessageType)number : MessageType.Unknown;
+        }
+
+        var raw = element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return MessageType.Unknown;
+        }
+
+        if (Enum.TryParse<MessageType>(raw, ignoreCase: true, out var direct))
+        {
+            return direct;
+        }
+
+        var normalized = NormalizeToken(raw);
+        foreach (var value in Enum.GetValues<MessageType>())
+        {
+            if (NormalizeToken(value.ToString()) == normalized)
+            {
+                return value;
+            }
+        }
+
+        return MessageType.Unknown;
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string NormalizeToken(string value)
+    {
+        var chars = value
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray();
+        return new string(chars);
     }
 
     #endregion
