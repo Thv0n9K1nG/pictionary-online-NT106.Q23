@@ -1,22 +1,31 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Gateway.Managers;
 using Gateway.Services;
 using Shared.Enums;
 using Shared.Models;
+using Shared.Protocol;
 
 namespace Gateway.Handlers;
 
-/// <summary>
-/// Quản lý kết nối của một Client sau khi đã thiết lập TLS.
-/// Thực hiện xác thực (Register/Login) và quản lý phiên làm việc.
-/// </summary>
 public sealed class ClientHandler
 {
     private readonly Stream _stream;
-    private readonly AuthService? _authService;
-    private readonly SessionDirectory? _sessionDirectory;
+    private readonly AuthService _authService;
+    private readonly SessionDirectory _sessionDirectory;
+    private readonly RoomDirectory? _roomDirectory;
+    private readonly NodeRegistry? _nodeRegistry;
+    private readonly LoadBalancer? _loadBalancer;
+    private readonly GameServerConnectionDirectory? _gameServerConnections;
+    private readonly ClientConnectionDirectory? _clientConnections;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private static readonly JsonSerializerOptions RoomJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+    private string? _currentSessionId;
 
     public string ConnectionId { get; } = Guid.NewGuid().ToString("N");
 
@@ -27,9 +36,24 @@ public sealed class ClientHandler
         _sessionDirectory = sessionDirectory;
     }
 
-    /// <summary>
-    /// Gửi gói tin JSON về phía Client.
-    /// </summary>
+    public ClientHandler(
+        Stream stream,
+        AuthService authService,
+        SessionDirectory sessionDirectory,
+        RoomDirectory roomDirectory,
+        NodeRegistry nodeRegistry,
+        LoadBalancer loadBalancer,
+        GameServerConnectionDirectory gameServerConnections,
+        ClientConnectionDirectory clientConnections)
+        : this(stream, authService, sessionDirectory)
+    {
+        _roomDirectory = roomDirectory;
+        _nodeRegistry = nodeRegistry;
+        _loadBalancer = loadBalancer;
+        _gameServerConnections = gameServerConnections;
+        _clientConnections = clientConnections;
+    }
+
     public async Task SendAsync(GameMessage message, CancellationToken cancellationToken = default)
     {
         var line = message.ToJsonLine();
@@ -47,34 +71,41 @@ public sealed class ClientHandler
         }
     }
 
-    /// <summary>
-    /// Vòng lặp chính đọc dữ liệu từ Socket.
-    /// </summary>
     public async Task HandleAsync(CancellationToken cancellationToken = default)
     {
         var readBuffer = new byte[4096];
         var textBuffer = new StringBuilder();
 
-        Console.WriteLine($"[Gateway][Client:{ShortId}] Bắt đầu xử lý kết nối.");
+        Console.WriteLine($"[Gateway][Client:{ShortId}] Handler started.");
 
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            try
+            while (!cancellationToken.IsCancellationRequested)
             {
                 var bytesRead = await _stream.ReadAsync(readBuffer.AsMemory(0, readBuffer.Length), cancellationToken);
                 if (bytesRead == 0)
                 {
-                    Console.WriteLine($"[Gateway][Client:{ShortId}] Client đã ngắt kết nối.");
+                    Console.WriteLine($"[Gateway][Client:{ShortId}] Remote closed connection.");
                     break;
                 }
 
                 textBuffer.Append(Encoding.UTF8.GetString(readBuffer, 0, bytesRead));
                 await ProcessBufferedLinesAsync(textBuffer, cancellationToken);
             }
-            catch (Exception ex)
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Normal shutdown.
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Stream error: {ex.Message}");
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(_currentSessionId))
             {
-                Console.WriteLine($"[Gateway][Client:{ShortId}] Lỗi đọc stream: {ex.Message}");
-                break;
+                _clientConnections?.RemoveSession(_currentSessionId);
             }
         }
     }
@@ -85,7 +116,10 @@ public sealed class ClientHandler
         {
             var current = textBuffer.ToString();
             var newlineIndex = current.IndexOf('\n');
-            if (newlineIndex < 0) return;
+            if (newlineIndex < 0)
+            {
+                return;
+            }
 
             var line = current[..newlineIndex].TrimEnd('\r').TrimStart('\uFEFF');
             textBuffer.Remove(0, newlineIndex + 1);
@@ -102,38 +136,40 @@ public sealed class ClientHandler
         try
         {
             var message = ParseGameMessage(line);
-            Console.WriteLine($"[Gateway][Client:{ShortId}] Nhận tin nhắn: {message.Type}");
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Message type = {message.Type}");
 
             switch (message.Type)
             {
                 case MessageType.Register:
                     await HandleRegisterAsync(message, cancellationToken);
                     break;
-
                 case MessageType.Login:
                     await HandleLoginAsync(message, cancellationToken);
                     break;
-
+                case MessageType.CreateRoom:
+                    await HandleCreateRoomAsync(message, cancellationToken);
+                    break;
+                case MessageType.Join:
+                    await HandleJoinRoomAsync(message, cancellationToken);
+                    break;
+                case MessageType.GetRoomList:
+                    await HandleGetRoomListAsync(cancellationToken);
+                    break;
                 default:
-                    // Trong các giai đoạn sau, các tin nhắn gameplay (vẽ, chat) 
-                    // sẽ được chuyển tiếp qua ProxyRouter tại đây.
-                    Console.WriteLine($"[Gateway][Client:{ShortId}] Loại tin nhắn {message.Type} chưa được hỗ trợ xử lý.");
+                    await SendAsync(CreateError(MessageType.Error, $"{message.Type} is not supported yet."), cancellationToken);
                     break;
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Gateway][Client:{ShortId}] Lỗi xử lý gói tin: {ex.Message}");
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Message handling error: {ex.Message}");
+            await SendAsync(CreateError(MessageType.Error, ex.Message), cancellationToken);
         }
     }
 
     private async Task HandleRegisterAsync(GameMessage message, CancellationToken cancellationToken)
     {
-        if (_authService is null) return;
-
         var (username, password) = ReadCredentials(message.Payload);
-
-        // 1. Validate dữ liệu đầu vào
         var validationError = ValidateCredentials(username, password);
         if (validationError is not null)
         {
@@ -143,55 +179,48 @@ public sealed class ClientHandler
 
         try
         {
-            // 2. Gọi AuthService thực hiện Hash + Insert DB
             var userId = await _authService.RegisterAsync(username, password, cancellationToken);
-            Console.WriteLine($"[Gateway][Client:{ShortId}] Đăng ký thành công: {username}");
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Register success: {username}");
 
-            // 3. Trả về REGISTER_SUCCESS
             await SendAsync(new GameMessage
             {
                 Type = MessageType.RegisterSuccess,
                 Payload = new { userId, playerId = userId, username }
             }, cancellationToken);
         }
-        catch (Exception)
+        catch
         {
-            // Thường là lỗi UNIQUE constraint do trùng username trong DB
-            await SendAsync(CreateError(MessageType.RegisterFailed, "Tên đăng nhập đã tồn tại hoặc dữ liệu không hợp lệ."), cancellationToken);
+            await SendAsync(CreateError(MessageType.RegisterFailed, "Username already exists or registration data is invalid."), cancellationToken);
         }
     }
 
     private async Task HandleLoginAsync(GameMessage message, CancellationToken cancellationToken)
     {
-        if (_authService is null || _sessionDirectory is null) return;
-
         var (username, password) = ReadCredentials(message.Payload);
-
-        // 1. Gọi AuthService để Verify BCrypt và tạo SessionId
         var sessionId = await _authService.LoginAsync(username, password, cancellationToken);
 
         if (string.IsNullOrWhiteSpace(sessionId))
         {
-            Console.WriteLine($"[Gateway][Client:{ShortId}] Đăng nhập thất bại: {username}");
-            await SendAsync(CreateError(MessageType.LoginFailed, "Tài khoản hoặc mật khẩu không chính xác."), cancellationToken);
+            Console.WriteLine($"[Gateway][Client:{ShortId}] Login failed: {username}");
+            await SendAsync(CreateError(MessageType.LoginFailed, "Invalid username or password."), cancellationToken);
             return;
         }
 
         var userId = ExtractUserIdFromSessionId(sessionId);
-
-        // 2. Lưu vào SessionDirectory (RAM) để quản lý các gói tin tiếp theo
         var session = new SessionInfo(
             SessionId: sessionId,
             UserId: userId,
             PlayerId: userId,
             RoomCode: null,
             CreatedAt: DateTimeOffset.UtcNow,
-            ExpiresAt: DateTimeOffset.UtcNow.AddHours(4)); // Session mặc định hết hạn sau 4h
+            ExpiresAt: DateTimeOffset.UtcNow.AddHours(4));
 
         _sessionDirectory.Set(session);
-        Console.WriteLine($"[Gateway][Client:{ShortId}] Đăng nhập thành công: {username}");
+        _currentSessionId = sessionId;
+        _clientConnections?.RegisterSession(sessionId, this);
 
-        // 3. Trả về LOGIN_SUCCESS kèm sessionId và thông tin định danh
+        Console.WriteLine($"[Gateway][Client:{ShortId}] Login success: {username}");
+
         await SendAsync(new GameMessage
         {
             Type = MessageType.LoginSuccess,
@@ -199,39 +228,263 @@ public sealed class ClientHandler
         }, cancellationToken);
     }
 
-    #region Helpers
+    private async Task HandleCreateRoomAsync(GameMessage message, CancellationToken cancellationToken)
+    {
+        if (!TryResolveSession(message.Payload, out var session, out var sessionId, out var error))
+        {
+            await SendAsync(CreateError(MessageType.Error, error), cancellationToken);
+            return;
+        }
+        var resolvedSession = session!;
+
+        if (_loadBalancer is null || _gameServerConnections is null || _roomDirectory is null || _nodeRegistry is null)
+        {
+            await SendAsync(CreateError(MessageType.Error, "Gateway room routing is not configured."), cancellationToken);
+            return;
+        }
+
+        var selectedServer = _loadBalancer.SelectBestServer();
+        if (selectedServer is null ||
+            !_gameServerConnections.TryGet(selectedServer.ServerId, out var gameServer) ||
+            gameServer is null)
+        {
+            await SendAsync(CreateError(MessageType.Error, "No GameServer is available for new rooms."), cancellationToken);
+            return;
+        }
+
+        var playerName = ReadStringFromPayload(message.Payload, "playerName")
+            ?? ReadStringFromPayload(message.Payload, "username")
+            ?? resolvedSession.UserId;
+
+        var response = await gameServer.SendInternalRequestAsync(
+            InternalMessageType.CreateRoomOnNode,
+            new { sessionId, playerId = resolvedSession.PlayerId, playerName },
+            cancellationToken);
+
+        await ApplyRoomResponseAsync(response, sessionId, selectedServer.ServerId, isCreateRoom: true, cancellationToken);
+    }
+
+    private async Task HandleJoinRoomAsync(GameMessage message, CancellationToken cancellationToken)
+    {
+        if (!TryResolveSession(message.Payload, out var session, out var sessionId, out var error))
+        {
+            await SendAsync(CreateError(MessageType.Error, error), cancellationToken);
+            return;
+        }
+        var resolvedSession = session!;
+
+        if (_gameServerConnections is null || _roomDirectory is null)
+        {
+            await SendAsync(CreateError(MessageType.Error, "Gateway room routing is not configured."), cancellationToken);
+            return;
+        }
+
+        var roomCode = ReadStringFromPayload(message.Payload, "roomCode")?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(roomCode))
+        {
+            await SendAsync(CreateError(MessageType.Error, "Room code is required."), cancellationToken);
+            return;
+        }
+
+        if (!_roomDirectory.TryGetOwner(roomCode, out var ownerServerId) ||
+            string.IsNullOrWhiteSpace(ownerServerId) ||
+            !_gameServerConnections.TryGet(ownerServerId, out var gameServer) ||
+            gameServer is null)
+        {
+            await SendAsync(CreateError(MessageType.Error, "Room not found."), cancellationToken);
+            return;
+        }
+
+        var playerName = ReadStringFromPayload(message.Payload, "playerName")
+            ?? ReadStringFromPayload(message.Payload, "username")
+            ?? resolvedSession.UserId;
+
+        var response = await gameServer.SendInternalRequestAsync(
+            InternalMessageType.ForwardClientMessage,
+            new
+            {
+                roomCode,
+                sessionId,
+                playerId = resolvedSession.PlayerId,
+                playerName,
+                innerMessage = message
+            },
+            cancellationToken);
+
+        await ApplyRoomResponseAsync(response, sessionId, ownerServerId, isCreateRoom: false, cancellationToken);
+    }
+
+    private async Task HandleGetRoomListAsync(CancellationToken cancellationToken)
+    {
+        if (_roomDirectory is null)
+        {
+            await SendAsync(CreateError(MessageType.Error, "Room directory is not configured."), cancellationToken);
+            return;
+        }
+
+        await SendAsync(new GameMessage
+        {
+            Type = MessageType.RoomList,
+            Payload = new { rooms = _roomDirectory.GetWaitingRooms() }
+        }, cancellationToken);
+    }
+
+    private async Task ApplyRoomResponseAsync(
+        JsonElement response,
+        string sessionId,
+        string ownerServerId,
+        bool isCreateRoom,
+        CancellationToken cancellationToken)
+    {
+        var success = ReadBoolProperty(response, "success", false);
+        if (!success)
+        {
+            await SendAsync(CreateError(MessageType.Error, ReadStringProperty(response, "error") ?? "Room operation failed."), cancellationToken);
+            return;
+        }
+
+        var roomCode = ReadStringProperty(response, "roomCode");
+        if (string.IsNullOrWhiteSpace(roomCode))
+        {
+            await SendAsync(CreateError(MessageType.Error, "GameServer did not return a room code."), cancellationToken);
+            return;
+        }
+
+        RoomInfo? roomInfo = null;
+        if (TryGetPropertyIgnoreCase(response, "roomInfo", out var roomInfoElement))
+        {
+            roomInfo = roomInfoElement.Deserialize<RoomInfo>(RoomJsonOptions);
+        }
+
+        if (roomInfo is not null)
+        {
+            _roomDirectory?.UpsertRoom(roomInfo);
+        }
+        else
+        {
+            _roomDirectory?.SetOwner(roomCode, ownerServerId);
+        }
+
+        _clientConnections?.JoinRoom(roomCode, sessionId);
+
+        if (_sessionDirectory.TryGet(sessionId, out var session) && session is not null)
+        {
+            _sessionDirectory.Set(session with { RoomCode = roomCode });
+        }
+
+        _nodeRegistry?.AdjustLoad(ownerServerId, isCreateRoom ? 1 : 0, 1);
+
+        await SendAsync(new GameMessage
+        {
+            Type = MessageType.RoomJoined,
+            Payload = new { roomCode, roomInfo }
+        }, cancellationToken);
+
+        if (TryGetPropertyIgnoreCase(response, "players", out var playersElement))
+        {
+            var playerListMessage = new GameMessage
+            {
+                Type = MessageType.PlayerList,
+                Payload = new { roomCode, players = playersElement.Clone() }
+            };
+
+            if (_clientConnections is null)
+            {
+                await SendAsync(playerListMessage, cancellationToken);
+                return;
+            }
+
+            foreach (var client in _clientConnections.GetRoomClients(roomCode))
+            {
+                await client.SendAsync(playerListMessage, cancellationToken);
+            }
+        }
+    }
 
     private string ShortId => ConnectionId.Length <= 8 ? ConnectionId : ConnectionId[..8];
 
+    private bool TryResolveSession(object? payload, out SessionInfo? session, out string sessionId, out string error)
+    {
+        sessionId = ReadStringFromPayload(payload, "sessionId") ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            session = null;
+            error = "SessionId is required.";
+            return false;
+        }
+
+        if (!_sessionDirectory.TryGet(sessionId, out session) || session is null)
+        {
+            error = "Invalid session.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     private static (string Username, string Password) ReadCredentials(object? payload)
+    {
+        return (
+            ReadStringFromPayload(payload, "username") ?? string.Empty,
+            ReadStringFromPayload(payload, "password") ?? string.Empty);
+    }
+
+    private static string? ReadStringFromPayload(object? payload, string name)
     {
         if (payload is JsonElement element)
         {
-            return (
-                ReadStringProperty(element, "username") ?? string.Empty,
-                ReadStringProperty(element, "password") ?? string.Empty);
+            return ReadStringProperty(element, name);
         }
-        return (string.Empty, string.Empty);
+
+        if (payload is null)
+        {
+            return null;
+        }
+
+        var json = JsonSerializer.Serialize(payload, GameMessage.JsonOptions);
+        using var doc = JsonDocument.Parse(json);
+        return ReadStringProperty(doc.RootElement, name);
     }
 
     private static string? ReadStringProperty(JsonElement element, string name)
     {
-        foreach (var property in element.EnumerateObject())
+        if (TryGetPropertyIgnoreCase(element, name, out var property))
         {
-            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                return property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() : property.Value.ToString();
-            }
+            return property.ValueKind == JsonValueKind.String ? property.GetString() : property.ToString();
         }
+
         return null;
+    }
+
+    private static bool ReadBoolProperty(JsonElement element, string name, bool defaultValue)
+    {
+        if (!TryGetPropertyIgnoreCase(element, name, out var property))
+        {
+            return defaultValue;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when bool.TryParse(property.GetString(), out var parsed) => parsed,
+            _ => defaultValue
+        };
     }
 
     private static string? ValidateCredentials(string username, string password)
     {
         if (string.IsNullOrWhiteSpace(username) || username.Length < 3)
-            return "Tên đăng nhập phải có ít nhất 3 ký tự.";
+        {
+            return "Username must be at least 3 characters.";
+        }
+
         if (string.IsNullOrWhiteSpace(password) || password.Length < 6)
-            return "Mật khẩu phải có ít nhất 6 ký tự.";
+        {
+            return "Password must be at least 6 characters.";
+        }
+
         return null;
     }
 
@@ -348,6 +601,4 @@ public sealed class ClientHandler
             .ToArray();
         return new string(chars);
     }
-
-    #endregion
 }
