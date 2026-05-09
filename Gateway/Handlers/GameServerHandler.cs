@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using Gateway.Managers;
@@ -21,21 +22,79 @@ public sealed class GameServerHandler
     private readonly TcpClient _tcpClient;
     private readonly NetworkStream _stream;
     private readonly NodeRegistry _nodeRegistry;
+    private readonly GameServerConnectionDirectory _connectionDirectory;
+    private readonly Func<JsonElement, CancellationToken, Task> _serverEventHandler;
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingRequests = new();
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
     public string ConnectionId { get; } = Guid.NewGuid().ToString("N");
     public string? ServerId { get; private set; }
 
-    public GameServerHandler(TcpClient tcpClient, NetworkStream stream, NodeRegistry nodeRegistry)
+    public GameServerHandler(
+        TcpClient tcpClient,
+        NetworkStream stream,
+        NodeRegistry nodeRegistry,
+        GameServerConnectionDirectory connectionDirectory,
+        Func<JsonElement, CancellationToken, Task> serverEventHandler)
     {
         _tcpClient = tcpClient;
         _stream = stream;
         _nodeRegistry = nodeRegistry;
+        _connectionDirectory = connectionDirectory;
+        _serverEventHandler = serverEventHandler;
     }
 
     public async Task SendAsync(GameMessage message, CancellationToken cancellationToken = default)
     {
         var line = message.ToJsonLine();
+        var bytes = Encoding.UTF8.GetBytes(line);
+
+        await _sendLock.WaitAsync(cancellationToken);
+        try
+        {
+            await _stream.WriteAsync(bytes, cancellationToken);
+            await _stream.FlushAsync(cancellationToken);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
+    }
+
+    public async Task<JsonElement> SendInternalRequestAsync(
+        InternalMessageType type,
+        object payload,
+        CancellationToken cancellationToken = default)
+    {
+        var requestId = Guid.NewGuid().ToString("N");
+        var payloadJson = JsonSerializer.SerializeToElement(payload, GameMessage.JsonOptions);
+        using var mergedPayload = MergePayloadWithRequestId(payloadJson, requestId);
+        var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _pendingRequests[requestId] = tcs;
+        try
+        {
+            await SendInternalAsync(type, mergedPayload.RootElement, cancellationToken);
+            using var registration = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
+            return await tcs.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+        finally
+        {
+            _pendingRequests.TryRemove(requestId, out _);
+        }
+    }
+
+    private async Task SendInternalAsync(InternalMessageType type, object payload, CancellationToken cancellationToken)
+    {
+        var envelope = new
+        {
+            type,
+            payload,
+            senderId = "gateway",
+            timestamp = DateTimeOffset.UtcNow
+        };
+
+        var line = JsonSerializer.Serialize(envelope, GameMessage.JsonOptions) + "\n";
         var bytes = Encoding.UTF8.GetBytes(line);
 
         await _sendLock.WaitAsync(cancellationToken);
@@ -118,8 +177,11 @@ public sealed class GameServerHandler
                     HandleNodeHeartbeat(message);
                     break;
 
+                case InternalMessageType.ServerEvent:
+                    return HandleServerEventAsync(message, cancellationToken);
+
                 default:
-                    Console.WriteLine($"[Gateway][GameServer:{ShortServerName}] Internal message = {message.Type} (not handled in Stage 1)");
+                    Console.WriteLine($"[Gateway][GameServer:{ShortServerName}] Internal message = {message.Type} (not handled in Stage 3)");
                     break;
             }
         }
@@ -143,6 +205,7 @@ public sealed class GameServerHandler
         var capacity = ReadInt(payload, "capacity", 0);
 
         ServerId = serverId;
+        _connectionDirectory.Register(serverId, this);
 
         var heartbeat = new HeartbeatInfo(
             ServerId: serverId,
@@ -205,7 +268,45 @@ public sealed class GameServerHandler
             });
         }
 
+        _connectionDirectory.Remove(ServerId);
         Console.WriteLine($"[Gateway] GameServer offline: {ServerId}");
+    }
+
+    private async Task HandleServerEventAsync(InternalMessageEnvelope message, CancellationToken cancellationToken)
+    {
+        if (TryGetPropertyIgnoreCase(message.Payload, "requestId", out var requestIdElement))
+        {
+            var requestId = requestIdElement.ValueKind == JsonValueKind.String
+                ? requestIdElement.GetString()
+                : requestIdElement.ToString();
+
+            if (!string.IsNullOrWhiteSpace(requestId) &&
+                _pendingRequests.TryRemove(requestId, out var pendingRequest))
+            {
+                pendingRequest.TrySetResult(message.Payload.Clone());
+                return;
+            }
+        }
+
+        await _serverEventHandler(message.Payload, cancellationToken);
+    }
+
+    private static JsonDocument MergePayloadWithRequestId(JsonElement payload, string requestId)
+    {
+        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["requestId"] = requestId
+        };
+
+        if (payload.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in payload.EnumerateObject())
+            {
+                values[property.Name] = property.Value.Clone();
+            }
+        }
+
+        return JsonDocument.Parse(JsonSerializer.Serialize(values, GameMessage.JsonOptions));
     }
 
     private string ShortId => ConnectionId.Length <= 8 ? ConnectionId : ConnectionId[..8];
