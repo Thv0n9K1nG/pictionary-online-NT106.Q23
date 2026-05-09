@@ -1,10 +1,12 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json;
 using Gateway.Data;
 using Gateway.Handlers;
 using Gateway.Managers;
 using Gateway.Security;
 using Gateway.Services;
+using Shared.Models;
 
 namespace Gateway.Core;
 
@@ -24,6 +26,8 @@ public sealed class GatewayServer
     private readonly NodeRegistry _nodeRegistry = new();
     private readonly RoomDirectory _roomDirectory = new();
     private readonly SessionDirectory _sessionDirectory = new();
+    private readonly GameServerConnectionDirectory _gameServerConnections = new();
+    private readonly ClientConnectionDirectory _clientConnections = new();
     private readonly CheckpointStore _checkpointStore = new();
 
     // Các công cụ hỗ trợ kết nối và bảo mật
@@ -123,7 +127,15 @@ public sealed class GatewayServer
                 }
 
                 // Truyền đầy đủ dịch vụ vào Handler để xử lý Login/Register
-                var handler = new ClientHandler(tlsStream, _authService, _sessionDirectory);
+                var handler = new ClientHandler(
+                    tlsStream,
+                    _authService,
+                    _sessionDirectory,
+                    _roomDirectory,
+                    _nodeRegistry,
+                    new LoadBalancer(_nodeRegistry),
+                    _gameServerConnections,
+                    _clientConnections);
                 await handler.HandleAsync(cancellationToken);
             }
         }
@@ -161,7 +173,12 @@ public sealed class GatewayServer
                 Console.WriteLine($"[Gateway] GameServer kết nối (TCP): {remote}");
 
                 // GameServer kết nối nội bộ nên dùng stream trực tiếp (plaintext)
-                var handler = new GameServerHandler(tcpClient, stream, _nodeRegistry);
+                var handler = new GameServerHandler(
+                    tcpClient,
+                    stream,
+                    _nodeRegistry,
+                    _gameServerConnections,
+                    HandleServerEventAsync);
                 await handler.HandleAsync(cancellationToken);
             }
         }
@@ -169,5 +186,59 @@ public sealed class GatewayServer
         {
             Console.WriteLine($"[Gateway][GameServer:{remote}] Ngắt kết nối/Lỗi: {ex.Message}");
         }
+    }
+
+    private async Task HandleServerEventAsync(JsonElement payload, CancellationToken cancellationToken)
+    {
+        if (!TryReadString(payload, "roomCode", out var roomCode) || string.IsNullOrWhiteSpace(roomCode))
+        {
+            return;
+        }
+
+        if (!TryGetPropertyIgnoreCase(payload, "innerMessage", out var innerMessageElement))
+        {
+            return;
+        }
+
+        var message = innerMessageElement.Deserialize<GameMessage>(GameMessage.JsonOptions);
+        if (message is null)
+        {
+            return;
+        }
+
+        foreach (var client in _clientConnections.GetRoomClients(roomCode))
+        {
+            await client.SendAsync(message, cancellationToken);
+        }
+    }
+
+    private static bool TryReadString(JsonElement element, string name, out string? value)
+    {
+        if (TryGetPropertyIgnoreCase(element, name, out var property))
+        {
+            value = property.ValueKind == JsonValueKind.String ? property.GetString() : property.ToString();
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
     }
 }
