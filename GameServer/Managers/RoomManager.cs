@@ -25,6 +25,22 @@ public sealed class RoomManager
         return _rooms.TryGetValue(roomCode, out room);
     }
 
+    public GameRoom JoinRoom(string roomCode, string playerId, string playerName)
+    {
+        if (!_rooms.TryGetValue(roomCode, out var room))
+        {
+            throw new InvalidOperationException("Room not found.");
+        }
+
+        if (room.State != GameState.Waiting)
+        {
+            throw new InvalidOperationException("Room is not accepting players.");
+        }
+
+        room.AddPlayer(new PlayerInfo(playerId, playerName, 0, false, true));
+        return room;
+    }
+
     public int ActiveRoomCount => _rooms.Count;
 
     public int ActivePlayerCount => _rooms.Values.Sum(room => room.Players.Count);
@@ -35,6 +51,11 @@ public sealed class RoomManager
             .Where(r => r.State == GameState.Waiting)
             .Select(r => new RoomInfo(r.RoomCode, r.HostName, r.Players.Count, 4, RoomStatus.Waiting, r.OwnerServerId))
             .ToList();
+    }
+
+    public static RoomInfo ToRoomInfo(GameRoom room)
+    {
+        return new RoomInfo(room.RoomCode, room.HostName, room.Players.Count, 4, RoomStatus.Waiting, room.OwnerServerId);
     }
 
     private static string GenerateRoomCode()

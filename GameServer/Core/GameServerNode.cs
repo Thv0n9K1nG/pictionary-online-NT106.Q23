@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using GameServer.Handlers;
 using GameServer.Managers;
 using GameServer.Services;
 using Shared.Enums;
@@ -73,7 +74,72 @@ public sealed class GameServerNode
         await using var stream = tcpClient.GetStream();
         await SendNodeRegisterAsync(stream, cancellationToken);
 
-        while (!cancellationToken.IsCancellationRequested && tcpClient.Connected)
+        var gatewayHandler = new GatewayHandler(_serverId, _roomManager, SendInternalMessageAsync);
+        var receiveLoop = ReceiveLoopAsync(stream, gatewayHandler, cancellationToken);
+        var heartbeatLoop = HeartbeatLoopAsync(stream, cancellationToken);
+
+        await Task.WhenAny(receiveLoop, heartbeatLoop);
+
+        if (receiveLoop.IsFaulted)
+        {
+            await receiveLoop;
+        }
+
+        if (heartbeatLoop.IsFaulted)
+        {
+            await heartbeatLoop;
+        }
+    }
+
+    private async Task ReceiveLoopAsync(NetworkStream stream, GatewayHandler gatewayHandler, CancellationToken cancellationToken)
+    {
+        var readBuffer = new byte[4096];
+        var textBuffer = new StringBuilder();
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var bytesRead = await stream.ReadAsync(readBuffer.AsMemory(0, readBuffer.Length), cancellationToken);
+            if (bytesRead == 0)
+            {
+                Console.WriteLine($"[GameServer:{_serverId}] Gateway closed the internal connection.");
+                break;
+            }
+
+            textBuffer.Append(Encoding.UTF8.GetString(readBuffer, 0, bytesRead));
+            await ProcessBufferedLinesAsync(textBuffer, gatewayHandler, stream, cancellationToken);
+        }
+    }
+
+    private async Task ProcessBufferedLinesAsync(
+        StringBuilder textBuffer,
+        GatewayHandler gatewayHandler,
+        NetworkStream stream,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var current = textBuffer.ToString();
+            var newlineIndex = current.IndexOf('\n');
+            if (newlineIndex < 0)
+            {
+                return;
+            }
+
+            var line = current[..newlineIndex].TrimEnd('\r').TrimStart('\uFEFF');
+            textBuffer.Remove(0, newlineIndex + 1);
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            using var doc = JsonDocument.Parse(line);
+            await gatewayHandler.HandleInternalMessageAsync(doc.RootElement.Clone(), stream, cancellationToken);
+        }
+    }
+
+    private async Task HeartbeatLoopAsync(NetworkStream stream, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
         {
             await SendNodeHeartbeatAsync(stream, cancellationToken);
             await Task.Delay(TimeSpan.FromSeconds(HeartbeatIntervalSeconds), cancellationToken);
@@ -107,7 +173,6 @@ public sealed class GameServerNode
             status = NodeStatus.Online
         };
 
-        Console.WriteLine($"[GameServer:{_serverId}] Sending NODE_HEARTBEAT.");
         return SendInternalMessageAsync(stream, InternalMessageType.NodeHeartbeat, payload, cancellationToken);
     }
 

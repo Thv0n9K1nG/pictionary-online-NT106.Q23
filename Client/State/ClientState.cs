@@ -13,6 +13,7 @@ public sealed class ClientState
     public bool IsDrawer { get; set; }
     public int CurrentScore { get; set; }
     public List<PlayerInfo> PlayerList { get; } = [];
+    public List<RoomInfo> RoomList { get; } = [];
     public int LatestTimerValue { get; set; }
     public string? LastErrorMessage { get; set; }
 }

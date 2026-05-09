@@ -21,6 +21,11 @@ public sealed class GameRoom
 
     public void AddPlayer(PlayerInfo player)
     {
+        if (_players.Any(existing => existing.PlayerId == player.PlayerId))
+        {
+            return;
+        }
+
         if (_players.Count >= 4)
         {
             throw new InvalidOperationException("Room is full.");
