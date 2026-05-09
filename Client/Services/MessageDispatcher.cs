@@ -47,9 +47,52 @@ public sealed class MessageDispatcher
                 break;
 
             case MessageType.RoomJoined:
+                if (message.Payload is JsonElement roomJoinedPayload)
+                {
+                    if (roomJoinedPayload.TryGetProperty("roomCode", out var roomCodeProp))
+                    {
+                        _state.RoomCode = roomCodeProp.GetString();
+                    }
+                }
+                break;
+
             case MessageType.PlayerList:
+                if (message.Payload is JsonElement playerListPayload &&
+                    playerListPayload.TryGetProperty("players", out var playersProp))
+                {
+                    var players = JsonSerializer.Deserialize<List<PlayerInfo>>(playersProp.GetRawText(), new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    _state.PlayerList.Clear();
+                    if (players is not null)
+                    {
+                        _state.PlayerList.AddRange(players);
+                    }
+                }
+                break;
+
+            case MessageType.RoomList:
+                if (message.Payload is JsonElement roomListPayload &&
+                    roomListPayload.TryGetProperty("rooms", out var roomsProp))
+                {
+                    var rooms = JsonSerializer.Deserialize<List<RoomInfo>>(roomsProp.GetRawText(), new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    _state.RoomList.Clear();
+                    if (rooms is not null)
+                    {
+                        _state.RoomList.AddRange(rooms);
+                    }
+                }
+                break;
+
             case MessageType.DrawData:
             case MessageType.Error:
+                _state.LastErrorMessage = GetMessageString(message.Payload);
                 // TODO: Update state and UI through UiThreadDispatcher.
                 break;
 

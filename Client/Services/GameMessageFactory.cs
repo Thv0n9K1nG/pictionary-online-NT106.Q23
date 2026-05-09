@@ -32,6 +32,24 @@ public static class GameMessageFactory
         };
     }
 
+    public static GameMessage JoinRoom(string roomCode, string playerName, string sessionId)
+    {
+        return new GameMessage
+        {
+            Type = MessageType.Join,
+            Payload = new { roomCode, playerName, sessionId }
+        };
+    }
+
+    public static GameMessage GetRoomList()
+    {
+        return new GameMessage
+        {
+            Type = MessageType.GetRoomList,
+            Payload = new { }
+        };
+    }
+
     public static GameMessage Draw(string roomCode, DrawPayload payload, string sessionId)
     {
         return new GameMessage
