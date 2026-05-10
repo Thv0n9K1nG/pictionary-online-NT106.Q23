@@ -1,5 +1,6 @@
-﻿using Gateway.Managers;
+using Gateway.Managers;
 using Shared.Models;
+using Shared.Protocol;
 
 namespace Gateway.Services;
 
@@ -7,6 +8,7 @@ public sealed class ProxyRouter
 {
     private readonly RoomDirectory _roomDirectory;
     private readonly SessionDirectory _sessionDirectory;
+    private readonly GameServerConnectionDirectory? _gameServerConnections;
 
     public ProxyRouter(RoomDirectory roomDirectory, SessionDirectory sessionDirectory)
     {
@@ -14,9 +16,22 @@ public sealed class ProxyRouter
         _sessionDirectory = sessionDirectory;
     }
 
-    public Task RouteClientMessageAsync(string roomCode, string sessionId, GameMessage innerMessage, CancellationToken cancellationToken = default)
+    public ProxyRouter(
+        RoomDirectory roomDirectory,
+        SessionDirectory sessionDirectory,
+        GameServerConnectionDirectory gameServerConnections)
+        : this(roomDirectory, sessionDirectory)
     {
-        if (!_sessionDirectory.TryGet(sessionId, out _))
+        _gameServerConnections = gameServerConnections;
+    }
+
+    public async Task RouteClientMessageAsync(
+        string roomCode,
+        string sessionId,
+        GameMessage innerMessage,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_sessionDirectory.TryGet(sessionId, out var session) || session is null)
         {
             throw new InvalidOperationException("Invalid session.");
         }
@@ -26,7 +41,31 @@ public sealed class ProxyRouter
             throw new InvalidOperationException("Room owner not found.");
         }
 
-        // TODO: Find GameServerHandler by ownerServerId and forward FORWARD_CLIENT_MESSAGE.
-        return Task.CompletedTask;
+        if (_gameServerConnections is null ||
+            !_gameServerConnections.TryGet(ownerServerId, out var gameServer) ||
+            gameServer is null)
+        {
+            throw new InvalidOperationException("Room owner GameServer is not connected.");
+        }
+
+        var response = await gameServer.SendInternalRequestAsync(
+            InternalMessageType.ForwardClientMessage,
+            new
+            {
+                roomCode,
+                sessionId,
+                playerId = session.PlayerId,
+                innerMessage
+            },
+            cancellationToken);
+
+        if (response.TryGetProperty("success", out var successElement) &&
+            successElement.ValueKind == System.Text.Json.JsonValueKind.False)
+        {
+            var error = response.TryGetProperty("error", out var errorElement)
+                ? errorElement.GetString()
+                : "GameServer rejected the message.";
+            throw new InvalidOperationException(error);
+        }
     }
 }

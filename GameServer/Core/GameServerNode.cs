@@ -20,6 +20,7 @@ public sealed class GameServerNode
     private readonly string _gatewayHost;
     private readonly int _gatewayPort;
     private readonly RoomManager _roomManager = new();
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = false,
@@ -192,7 +193,16 @@ public sealed class GameServerNode
 
         var line = JsonSerializer.Serialize(envelope, _jsonOptions) + "\n";
         var bytes = Encoding.UTF8.GetBytes(line);
-        await stream.WriteAsync(bytes, cancellationToken);
-        await stream.FlushAsync(cancellationToken);
+
+        await _sendLock.WaitAsync(cancellationToken);
+        try
+        {
+            await stream.WriteAsync(bytes, cancellationToken);
+            await stream.FlushAsync(cancellationToken);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
     }
 }
