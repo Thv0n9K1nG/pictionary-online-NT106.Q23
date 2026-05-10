@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using System.Text.Json;
 using GameServer.Managers;
+using GameServer.Rooms;
 using Shared.Enums;
 using Shared.Models;
 using Shared.Protocol;
@@ -42,7 +43,7 @@ public sealed class GatewayHandler
                 await HandleForwardClientMessageAsync(payload, stream, cancellationToken);
                 break;
             default:
-                Console.WriteLine($"[GameServer:{_serverId}] Internal message {type} is not handled in Stage 3.");
+                Console.WriteLine($"[GameServer:{_serverId}] Internal message {type} is not handled.");
                 break;
         }
     }
@@ -52,10 +53,11 @@ public sealed class GatewayHandler
         var requestId = ReadString(payload, "requestId");
         try
         {
+            var sessionId = ReadString(payload, "sessionId") ?? throw new InvalidOperationException("Missing sessionId.");
             var playerId = ReadString(payload, "playerId") ?? throw new InvalidOperationException("Missing playerId.");
             var playerName = ReadString(payload, "playerName") ?? playerId;
 
-            var room = _roomManager.CreateRoom(playerId, playerName, _serverId);
+            var room = _roomManager.CreateRoom(sessionId, playerId, playerName, _serverId);
             await SendRoomResponseAsync(requestId, room, stream, cancellationToken);
 
             Console.WriteLine($"[GameServer:{_serverId}] Created room {room.RoomCode}.");
@@ -73,13 +75,28 @@ public sealed class GatewayHandler
         {
             var roomCode = ReadString(payload, "roomCode")?.Trim().ToUpperInvariant()
                 ?? throw new InvalidOperationException("Missing roomCode.");
+            var sessionId = ReadString(payload, "sessionId") ?? throw new InvalidOperationException("Missing sessionId.");
             var playerId = ReadString(payload, "playerId") ?? throw new InvalidOperationException("Missing playerId.");
             var playerName = ReadString(payload, "playerName") ?? playerId;
+            var innerMessage = ReadGameMessage(payload);
 
-            var room = _roomManager.JoinRoom(roomCode, playerId, playerName);
-            await SendRoomResponseAsync(requestId, room, stream, cancellationToken);
-
-            Console.WriteLine($"[GameServer:{_serverId}] Player {playerId} joined room {room.RoomCode}.");
+            switch (innerMessage.Type)
+            {
+                case MessageType.Join:
+                    await HandleJoinAsync(requestId, roomCode, sessionId, playerId, playerName, stream, cancellationToken);
+                    break;
+                case MessageType.Ready:
+                    await HandleReadyAsync(requestId, roomCode, playerId, stream, cancellationToken);
+                    break;
+                case MessageType.SelectWord:
+                    await HandleSelectWordAsync(requestId, roomCode, playerId, innerMessage, stream, cancellationToken);
+                    break;
+                case MessageType.Guess:
+                    await HandleGuessAsync(requestId, roomCode, playerId, innerMessage, stream, cancellationToken);
+                    break;
+                default:
+                    throw new InvalidOperationException($"{innerMessage.Type} is not supported by the GameServer yet.");
+            }
         }
         catch (Exception ex)
         {
@@ -87,9 +104,178 @@ public sealed class GatewayHandler
         }
     }
 
+    private async Task HandleJoinAsync(
+        string? requestId,
+        string roomCode,
+        string sessionId,
+        string playerId,
+        string playerName,
+        NetworkStream stream,
+        CancellationToken cancellationToken)
+    {
+        var room = _roomManager.JoinRoom(roomCode, sessionId, playerId, playerName);
+        await SendRoomResponseAsync(requestId, room, stream, cancellationToken);
+        Console.WriteLine($"[GameServer:{_serverId}] Player {playerId} joined room {room.RoomCode}.");
+    }
+
+    private async Task HandleReadyAsync(
+        string? requestId,
+        string roomCode,
+        string playerId,
+        NetworkStream stream,
+        CancellationToken cancellationToken)
+    {
+        var result = await _roomManager.ReadyAsync(roomCode, playerId, cancellationToken);
+        await SendSuccessAckAsync(requestId, stream, cancellationToken);
+
+        await SendRoomEventAsync(roomCode, new GameMessage
+        {
+            Type = MessageType.GameStart,
+            Payload = new
+            {
+                roomCode,
+                state = GameState.SelectingWord,
+                drawerId = result.DrawerId,
+                round = result.Room.CompletedRounds + 1
+            }
+        }, stream, cancellationToken);
+
+        await SendRoomEventAsync(roomCode, new GameMessage
+        {
+            Type = MessageType.PlayerList,
+            Payload = new { roomCode, players = result.Players }
+        }, stream, cancellationToken);
+
+        await SendTargetedRoomEventAsync(roomCode, [result.DrawerSessionId], new GameMessage
+        {
+            Type = MessageType.WordOptions,
+            Payload = new { roomCode, drawerId = result.DrawerId, words = result.Words }
+        }, stream, cancellationToken);
+    }
+
+    private async Task HandleSelectWordAsync(
+        string? requestId,
+        string roomCode,
+        string playerId,
+        GameMessage message,
+        NetworkStream stream,
+        CancellationToken cancellationToken)
+    {
+        var selectedWord = ReadStringFromPayload(message.Payload, "word")
+            ?? ReadStringFromPayload(message.Payload, "selectedWord")
+            ?? throw new InvalidOperationException("Missing selected word.");
+
+        var result = _roomManager.SelectWord(roomCode, playerId, selectedWord);
+        await SendSuccessAckAsync(requestId, stream, cancellationToken);
+
+        await SendTargetedRoomEventAsync(roomCode, result.GuesserSessionIds, new GameMessage
+        {
+            Type = MessageType.Hint,
+            Payload = new
+            {
+                roomCode,
+                hint = result.Hint,
+                drawerId = playerId,
+                remainingSeconds = result.RemainingSeconds,
+                roundEndsAt = result.RoundEndsAt
+            }
+        }, stream, cancellationToken);
+
+        await SendRoomEventAsync(roomCode, new GameMessage
+        {
+            Type = MessageType.TimerUpdate,
+            Payload = new { roomCode, remainingSeconds = result.RemainingSeconds }
+        }, stream, cancellationToken);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(GameServer.Engine.GameEngine.RoundSeconds), CancellationToken.None);
+                var endResult = _roomManager.ExpireRound(roomCode);
+                if (!endResult.RoundEnded)
+                {
+                    return;
+                }
+
+                await SendRoundEndEventsAsync(roomCode, endResult.Players, endResult.GameEnded, stream, CancellationToken.None);
+            }
+            catch
+            {
+                // Timer expiration is best-effort for the demo server.
+            }
+        });
+    }
+
+    private async Task HandleGuessAsync(
+        string? requestId,
+        string roomCode,
+        string playerId,
+        GameMessage message,
+        NetworkStream stream,
+        CancellationToken cancellationToken)
+    {
+        var guess = ReadStringFromPayload(message.Payload, "guess")
+            ?? ReadStringFromPayload(message.Payload, "text")
+            ?? string.Empty;
+
+        var result = _roomManager.Guess(roomCode, playerId, guess);
+        await SendSuccessAckAsync(requestId, stream, cancellationToken);
+
+        if (!result.Result.Correct)
+        {
+            return;
+        }
+
+        await SendRoomEventAsync(roomCode, new GameMessage
+        {
+            Type = MessageType.CorrectGuess,
+            Payload = new
+            {
+                roomCode,
+                playerId,
+                scoreAwarded = result.Result.ScoreAwarded
+            }
+        }, stream, cancellationToken);
+
+        await SendRoomEventAsync(roomCode, new GameMessage
+        {
+            Type = MessageType.PlayerList,
+            Payload = new { roomCode, players = result.Result.Players }
+        }, stream, cancellationToken);
+
+        if (result.Result.RoundEnded)
+        {
+            await SendRoundEndEventsAsync(roomCode, result.Result.Players, result.Result.GameEnded, stream, cancellationToken);
+        }
+    }
+
+    private async Task SendRoundEndEventsAsync(
+        string roomCode,
+        IReadOnlyList<PlayerInfo> players,
+        bool gameEnded,
+        NetworkStream stream,
+        CancellationToken cancellationToken)
+    {
+        await SendRoomEventAsync(roomCode, new GameMessage
+        {
+            Type = MessageType.RoundEnd,
+            Payload = new { roomCode, players, gameEnded }
+        }, stream, cancellationToken);
+
+        if (gameEnded && _roomManager.TryGetRoom(roomCode, out var room) && room is not null)
+        {
+            await SendRoomEventAsync(roomCode, new GameMessage
+            {
+                Type = MessageType.GameEnd,
+                Payload = room.ToMatchResult()
+            }, stream, cancellationToken);
+        }
+    }
+
     private Task SendRoomResponseAsync(
         string? requestId,
-        GameServer.Rooms.GameRoom room,
+        GameRoom room,
         NetworkStream stream,
         CancellationToken cancellationToken)
     {
@@ -106,6 +292,15 @@ public sealed class GatewayHandler
         return _sendInternalAsync(stream, InternalMessageType.ServerEvent, payload, cancellationToken);
     }
 
+    private Task SendSuccessAckAsync(string? requestId, NetworkStream stream, CancellationToken cancellationToken)
+    {
+        return _sendInternalAsync(stream, InternalMessageType.ServerEvent, new
+        {
+            requestId,
+            success = true
+        }, cancellationToken);
+    }
+
     private Task SendFailureAsync(string? requestId, string error, NetworkStream stream, CancellationToken cancellationToken)
     {
         var payload = new
@@ -116,6 +311,45 @@ public sealed class GatewayHandler
         };
 
         return _sendInternalAsync(stream, InternalMessageType.ServerEvent, payload, cancellationToken);
+    }
+
+    private Task SendRoomEventAsync(
+        string roomCode,
+        GameMessage message,
+        NetworkStream stream,
+        CancellationToken cancellationToken)
+    {
+        return _sendInternalAsync(stream, InternalMessageType.ServerEvent, new
+        {
+            roomCode,
+            innerMessage = message
+        }, cancellationToken);
+    }
+
+    private Task SendTargetedRoomEventAsync(
+        string roomCode,
+        IReadOnlyList<string> targetSessionIds,
+        GameMessage message,
+        NetworkStream stream,
+        CancellationToken cancellationToken)
+    {
+        return _sendInternalAsync(stream, InternalMessageType.ServerEvent, new
+        {
+            roomCode,
+            targetSessionIds,
+            innerMessage = message
+        }, cancellationToken);
+    }
+
+    private static GameMessage ReadGameMessage(JsonElement payload)
+    {
+        if (!TryGetPropertyIgnoreCase(payload, "innerMessage", out var innerMessageElement))
+        {
+            return new GameMessage { Type = MessageType.Join };
+        }
+
+        return innerMessageElement.Deserialize<GameMessage>(GameMessage.JsonOptions)
+            ?? throw new InvalidOperationException("Invalid inner message.");
     }
 
     private static JsonElement ReadProperty(JsonElement element, string name)
@@ -131,6 +365,23 @@ public sealed class GatewayHandler
         }
 
         return null;
+    }
+
+    private static string? ReadStringFromPayload(object? payload, string name)
+    {
+        if (payload is JsonElement element)
+        {
+            return ReadString(element, name);
+        }
+
+        if (payload is null)
+        {
+            return null;
+        }
+
+        var json = JsonSerializer.Serialize(payload, GameMessage.JsonOptions);
+        using var doc = JsonDocument.Parse(json);
+        return ReadString(doc.RootElement, name);
     }
 
     private static InternalMessageType ParseInternalType(JsonElement element)

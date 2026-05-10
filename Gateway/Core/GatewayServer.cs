@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Gateway.Data;
 using Gateway.Handlers;
 using Gateway.Managers;
@@ -19,6 +20,12 @@ namespace Gateway.Core;
 /// </summary>
 public sealed class GatewayServer
 {
+    private static readonly JsonSerializerOptions MessageJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
     private readonly int _clientPort;
     private readonly int _gameServerPort;
 
@@ -200,13 +207,31 @@ public sealed class GatewayServer
             return;
         }
 
-        var message = innerMessageElement.Deserialize<GameMessage>(GameMessage.JsonOptions);
+        var message = innerMessageElement.Deserialize<GameMessage>(MessageJsonOptions);
         if (message is null)
         {
             return;
         }
 
-        foreach (var client in _clientConnections.GetRoomClients(roomCode))
+        IReadOnlyList<Handlers.ClientHandler> targets;
+        if (TryGetPropertyIgnoreCase(payload, "targetSessionIds", out var targetSessionIdsElement) &&
+            targetSessionIdsElement.ValueKind == JsonValueKind.Array)
+        {
+            var sessionIds = targetSessionIdsElement
+                .EnumerateArray()
+                .Select(item => item.ValueKind == JsonValueKind.String ? item.GetString() : item.ToString())
+                .Where(sessionId => !string.IsNullOrWhiteSpace(sessionId))
+                .Select(sessionId => sessionId!)
+                .ToList();
+
+            targets = _clientConnections.GetClients(sessionIds);
+        }
+        else
+        {
+            targets = _clientConnections.GetRoomClients(roomCode);
+        }
+
+        foreach (var client in targets)
         {
             await client.SendAsync(message, cancellationToken);
         }

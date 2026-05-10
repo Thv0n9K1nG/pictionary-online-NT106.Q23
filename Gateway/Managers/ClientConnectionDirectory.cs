@@ -32,6 +32,14 @@ public sealed class ClientConnectionDirectory
             .ToList();
     }
 
+    public IReadOnlyList<ClientHandler> GetClients(IEnumerable<string> sessionIds)
+    {
+        return sessionIds
+            .Select(sessionId => _sessions.TryGetValue(sessionId, out var handler) ? handler : null)
+            .OfType<ClientHandler>()
+            .ToList();
+    }
+
     public void RemoveSession(string sessionId)
     {
         _sessions.TryRemove(sessionId, out _);

@@ -17,6 +17,7 @@ public sealed class ClientHandler
     private readonly RoomDirectory? _roomDirectory;
     private readonly NodeRegistry? _nodeRegistry;
     private readonly LoadBalancer? _loadBalancer;
+    private readonly ProxyRouter? _proxyRouter;
     private readonly GameServerConnectionDirectory? _gameServerConnections;
     private readonly ClientConnectionDirectory? _clientConnections;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
@@ -52,6 +53,7 @@ public sealed class ClientHandler
         _loadBalancer = loadBalancer;
         _gameServerConnections = gameServerConnections;
         _clientConnections = clientConnections;
+        _proxyRouter = new ProxyRouter(roomDirectory, sessionDirectory, gameServerConnections);
     }
 
     public async Task SendAsync(GameMessage message, CancellationToken cancellationToken = default)
@@ -154,6 +156,12 @@ public sealed class ClientHandler
                     break;
                 case MessageType.GetRoomList:
                     await HandleGetRoomListAsync(cancellationToken);
+                    break;
+                case MessageType.Ready:
+                case MessageType.SelectWord:
+                case MessageType.Guess:
+                case MessageType.Chat:
+                    await HandleGameplayMessageAsync(message, cancellationToken);
                     break;
                 default:
                     await SendAsync(CreateError(MessageType.Error, $"{message.Type} is not supported yet."), cancellationToken);
@@ -327,6 +335,37 @@ public sealed class ClientHandler
             Type = MessageType.RoomList,
             Payload = new { rooms = _roomDirectory.GetWaitingRooms() }
         }, cancellationToken);
+    }
+
+    private async Task HandleGameplayMessageAsync(GameMessage message, CancellationToken cancellationToken)
+    {
+        if (_proxyRouter is null)
+        {
+            await SendAsync(CreateError(MessageType.Error, "Gateway proxy router is not configured."), cancellationToken);
+            return;
+        }
+
+        var roomCode = ReadStringFromPayload(message.Payload, "roomCode")?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(roomCode))
+        {
+            await SendAsync(CreateError(MessageType.Error, "Room code is required."), cancellationToken);
+            return;
+        }
+
+        if (!TryResolveSession(message.Payload, out _, out var sessionId, out var error))
+        {
+            await SendAsync(CreateError(MessageType.Error, error), cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await _proxyRouter.RouteClientMessageAsync(roomCode, sessionId, message, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await SendAsync(CreateError(MessageType.Error, ex.Message), cancellationToken);
+        }
     }
 
     private async Task ApplyRoomResponseAsync(
