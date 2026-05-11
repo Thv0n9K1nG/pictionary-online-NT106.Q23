@@ -20,22 +20,15 @@ public sealed class GameEngine
         _wordBankService = wordBankService;
     }
 
-    public async Task<IReadOnlyList<string>> GetWordOptionsAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<string>> GetWordOptionsAsync(CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var words = await _geminiService.GenerateWordsAsync("pictionary", cancellationToken);
-            if (words.Count >= 5)
-            {
-                return words.Take(5).ToList();
-            }
-        }
-        catch
-        {
-            // Gemini is optional for the course demo; the local word bank keeps gameplay alive.
-        }
+        _ = cancellationToken;
+        return Task.FromResult(_wordBankService.GetWords(5));
+    }
 
-        return _wordBankService.GetFallbackWords(5);
+    public Task<string> GenerateHintAsync(string word, CancellationToken cancellationToken = default)
+    {
+        return _geminiService.GenerateHintAsync(word, cancellationToken);
     }
 
     public int CalculateGuessScore(int elapsedSeconds)

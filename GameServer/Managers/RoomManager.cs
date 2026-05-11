@@ -52,14 +52,20 @@ public sealed class RoomManager
         return new RoundStartResult(room, players, words, room.CurrentDrawerId!, room.CurrentDrawerSessionId!);
     }
 
-    public WordSelectedResult SelectWord(string roomCode, string playerId, string word)
+    public async Task<WordSelectedResult> SelectWordAsync(
+        string roomCode,
+        string playerId,
+        string word,
+        CancellationToken cancellationToken = default)
     {
         var room = GetRoom(roomCode);
         room.SelectWord(playerId, word);
+        var currentWord = room.CurrentWord ?? string.Empty;
 
         return new WordSelectedResult(
             room,
-            _gameEngine.MaskWord(room.CurrentWord ?? string.Empty),
+            await _gameEngine.GenerateHintAsync(currentWord, cancellationToken),
+            _gameEngine.MaskWord(currentWord),
             room.GetSessionIdsExcept(playerId),
             GameEngine.RoundSeconds,
             room.RoundEndsAt ?? DateTimeOffset.UtcNow.AddSeconds(GameEngine.RoundSeconds));
@@ -126,6 +132,7 @@ public sealed class RoomManager
     public sealed record WordSelectedResult(
         GameRoom Room,
         string Hint,
+        string MaskedWord,
         IReadOnlyList<string> GuesserSessionIds,
         int RemainingSeconds,
         DateTimeOffset RoundEndsAt);

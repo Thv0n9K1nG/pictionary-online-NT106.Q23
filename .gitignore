@@ -5,6 +5,13 @@
 
 # dotenv files
 .env
+.env.*
+!.env.example
+
+# Local API keys and secrets
+GameServer/secrets/*
+!GameServer/secrets/*.example.txt
+!GameServer/secrets/README.md
 
 # User-specific files
 *.rsuser
