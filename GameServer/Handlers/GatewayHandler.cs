@@ -165,7 +165,7 @@ public sealed class GatewayHandler
             ?? ReadStringFromPayload(message.Payload, "selectedWord")
             ?? throw new InvalidOperationException("Missing selected word.");
 
-        var result = _roomManager.SelectWord(roomCode, playerId, selectedWord);
+        var result = await _roomManager.SelectWordAsync(roomCode, playerId, selectedWord, cancellationToken);
         await SendSuccessAckAsync(requestId, stream, cancellationToken);
 
         await SendTargetedRoomEventAsync(roomCode, result.GuesserSessionIds, new GameMessage
@@ -175,6 +175,7 @@ public sealed class GatewayHandler
             {
                 roomCode,
                 hint = result.Hint,
+                maskedWord = result.MaskedWord,
                 drawerId = playerId,
                 remainingSeconds = result.RemainingSeconds,
                 roundEndsAt = result.RoundEndsAt
