@@ -1,12 +1,27 @@
-﻿namespace Client.UI;
+namespace Client.UI;
 
 public sealed class ResultForm : Form
 {
-    public ResultForm()
+    public ResultForm(
+        string title,
+        List<(string Username, int Score)> results)
     {
-        Text = "Pictionary Online - Result";
-        Width = 500;
-        Height = 300;
-        StartPosition = FormStartPosition.CenterScreen;
+        Text = title;
+
+        Width = 400;
+        Height = 400;
+
+        var list = new ListBox
+        {
+            Dock = DockStyle.Fill
+        };
+
+        foreach (var result in results)
+        {
+            list.Items.Add(
+                $"{result.Username} - {result.Score}");
+        }
+
+        Controls.Add(list);
     }
 }
