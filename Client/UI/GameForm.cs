@@ -8,6 +8,8 @@ namespace Client.UI;
 
 public sealed class GameForm : Form
 {
+    private System.Windows.Forms.Timer _uiTimer;
+    private int _lastTimerValue;
     private readonly ClientState _state;
     private readonly SocketService _socketService;
     private readonly MessageDispatcher _dispatcher;
