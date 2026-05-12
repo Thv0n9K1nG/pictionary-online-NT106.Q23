@@ -234,13 +234,15 @@ public sealed class GameForm : Form
             Invoke(() => UpdateTimer(remaining));
             return;
         }
-
+    
         _lblTimer.Text = remaining.ToString();
-
+    
         _lblTimer.ForeColor =
-            remaining <= 10
-            ? Color.Red
-            : Color.Black;
+            remaining <= 10 ? Color.Red :
+            remaining <= 20 ? Color.Orange :
+            Color.Green;
+    
+        _state.LatestTimerValue = remaining;
     }
 
     private void UpdateHint(string hint)
@@ -277,29 +279,7 @@ public sealed class GameForm : Form
             });
         }
     }
-    private void AnimateTimer()
-    {
-        int t = _state.LatestTimerValue;
     
-        if (t == _lastTimerValue)
-            return;
-    
-        _lastTimerValue = t;
-    
-        _lblTimer.Text = t.ToString();
-    
-        if (t > 20)
-            _lblTimer.ForeColor = Color.Green;
-        else if (t > 10)
-            _lblTimer.ForeColor = Color.Orange;
-        else
-            _lblTimer.ForeColor = Color.Red;
-    
-        if (t <= 10)
-            _lblTimer.Font = new Font(_lblTimer.Font.FontFamily, 28, FontStyle.Bold);
-        else
-            _lblTimer.Font = new Font(_lblTimer.Font.FontFamily, 24, FontStyle.Bold);
-    }
     private void AppendChat(string message, Color color)
     {
         if (InvokeRequired)
