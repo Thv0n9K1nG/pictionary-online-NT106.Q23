@@ -132,6 +132,15 @@ public sealed class GameForm : Form
         _btnSend.Click += BtnSend_Click;
 
         _txtGuess.KeyDown += TxtGuess_KeyDown;
+        _dispatcher.SystemMessageReceived += msg =>
+        {
+            AppendChat("[System] " + msg, Color.Blue);
+        };
+        
+        _dispatcher.CorrectGuessReceived += () =>
+        {
+            AppendChat("✔ Correct guess!", Color.LimeGreen);
+        };
     }
 
     private async void BtnReady_Click(
