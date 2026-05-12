@@ -8,7 +8,9 @@ namespace Client.Services;
 public sealed class MessageDispatcher
 {
     private readonly ClientState _state;
-
+    
+    public event Action<string>? SystemMessageReceived;
+    public event Action? CorrectGuessReceived;
     public event Action<List<PlayerInfo>>? PlayerListUpdated;
     public event Action<int>? TimerUpdated;
     public event Action<string>? HintReceived;
@@ -27,6 +29,14 @@ public sealed class MessageDispatcher
     {
         switch (message.Type)
         {
+            case MessageType.CorrectGuess:
+                 CorrectGuessReceived?.Invoke();
+                 break;
+
+            case MessageType.Error:
+            case MessageType.RoundEnd:
+                 SystemMessageReceived?.Invoke(GetMessageString(message.Payload) ?? "");
+                 break;
             case MessageType.PlayerList:
                 HandlePlayerList(message);
                 break;
