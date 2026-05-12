@@ -77,9 +77,11 @@ public sealed class GameForm : Form
         _scoreboard.Height = 200;
 
         _scoreboard.View = View.Details;
+        _scoreboard.FullRowSelect = true;
+        _scoreboard.GridLines = true;
 
-        _scoreboard.Columns.Add("Player", 140);
-        _scoreboard.Columns.Add("Score", 80);
+        _scoreboard.Columns.Add("Player", 150);
+        _scoreboard.Columns.Add("Score", 70);
 
         Controls.Add(_scoreboard);
 
@@ -182,9 +184,26 @@ public sealed class GameForm : Form
 
         foreach (var player in players)
         {
-            var item = new ListViewItem(player.Username);
+            var displayName = player.DisplayName;
+
+            if (player.IsHost)
+            {
+                displayName += " 👑";
+            }
+
+            if (player.IsDrawer)
+            {
+                displayName += " ✏️";
+            }
+
+            var item = new ListViewItem(displayName);
 
             item.SubItems.Add(player.Score.ToString());
+
+            if (!player.IsConnected)
+            {
+                item.ForeColor = Color.Gray;
+            }
 
             _scoreboard.Items.Add(item);
         }
