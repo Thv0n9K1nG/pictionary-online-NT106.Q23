@@ -28,40 +28,37 @@ public sealed class MessageDispatcher
     {
         switch (message.Type)
         {
-            case MessageType.CorrectGuess:
-                 CorrectGuessReceived?.Invoke();
-                 break;
-
-            case MessageType.Error:
-            case MessageType.RoundEnd:
-                 SystemMessageReceived?.Invoke(GetMessageString(message.Payload) ?? "");
-                 break;
             case MessageType.PlayerList:
                 HandlePlayerList(message);
                 break;
-
+    
             case MessageType.TimerUpdate:
                 HandleTimer(message);
                 break;
-
+    
             case MessageType.Hint:
                 HandleHint(message);
                 break;
-
+    
             case MessageType.WordOptions:
                 HandleWordOptions(message);
                 break;
-
+    
             case MessageType.CorrectGuess:
                 CorrectGuessReceived?.Invoke();
                 break;
-
+    
             case MessageType.RoundEnd:
                 RoundEnded?.Invoke();
+                SystemMessageReceived?.Invoke("Round ended");
                 break;
-
+    
             case MessageType.GameEnd:
                 GameEnded?.Invoke();
+                break;
+    
+            case MessageType.Error:
+                SystemMessageReceived?.Invoke(GetMessageString(message.Payload) ?? "Error");
                 break;
         }
     }
