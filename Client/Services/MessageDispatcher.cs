@@ -11,12 +11,11 @@ public sealed class MessageDispatcher
     
     public event Action<string>? SystemMessageReceived;
     public event Action? CorrectGuessReceived;
+
     public event Action<List<PlayerInfo>>? PlayerListUpdated;
     public event Action<int>? TimerUpdated;
     public event Action<string>? HintReceived;
     public event Action<List<string>>? WordOptionsReceived;
-    public event Action<string>? SystemMessageReceived;
-    public event Action? CorrectGuessReceived;
     public event Action? RoundEnded;
     public event Action? GameEnded;
 
