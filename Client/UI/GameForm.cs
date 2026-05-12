@@ -115,6 +115,10 @@ public sealed class GameForm : Form
         _btnReady.Height = 40;
 
         Controls.Add(_btnReady);
+        _uiTimer = new System.Windows.Forms.Timer();
+        _uiTimer.Interval = 500;
+        _uiTimer.Tick += (_, _) => AnimateTimer();
+        _uiTimer.Start();
     }
 
     private void RegisterEvents()
@@ -173,42 +177,45 @@ public sealed class GameForm : Form
         }
     }
 
-    private void UpdateScoreboard(
-        List<PlayerInfo> players)
+    private void UpdateScoreboard(List<PlayerInfo> players)
     {
         if (InvokeRequired)
         {
             Invoke(() => UpdateScoreboard(players));
             return;
         }
-
+    
+        _scoreboard.BeginUpdate();
         _scoreboard.Items.Clear();
-
-        foreach (var player in players)
+    
+        foreach (var p in players)
         {
-            var displayName = player.DisplayName;
-
-            if (player.IsHost)
+            string name = p.DisplayName;
+    
+            if (p.IsHost)
+                name = "👑 " + name;
+    
+            if (p.IsDrawer)
+                name = "✏️ " + name;
+    
+            var item = new ListViewItem(name);
+            item.SubItems.Add(p.Score.ToString());
+    
+            if (p.IsDrawer)
             {
-                displayName += " 👑";
+                item.BackColor = Color.LightGoldenrodYellow;
+                item.Font = new Font(_scoreboard.Font, FontStyle.Bold);
             }
-
-            if (player.IsDrawer)
-            {
-                displayName += " ✏️";
-            }
-
-            var item = new ListViewItem(displayName);
-
-            item.SubItems.Add(player.Score.ToString());
-
-            if (!player.IsConnected)
+    
+            if (!p.IsConnected)
             {
                 item.ForeColor = Color.Gray;
             }
-
+    
             _scoreboard.Items.Add(item);
         }
+    
+        _scoreboard.EndUpdate();
     }
 
     private void UpdateTimer(int remaining)
@@ -260,5 +267,45 @@ public sealed class GameForm : Form
                 }
             });
         }
+    }
+    private void AnimateTimer()
+    {
+        int t = _state.LatestTimerValue;
+    
+        if (t == _lastTimerValue)
+            return;
+    
+        _lastTimerValue = t;
+    
+        _lblTimer.Text = t.ToString();
+    
+        if (t > 20)
+            _lblTimer.ForeColor = Color.Green;
+        else if (t > 10)
+            _lblTimer.ForeColor = Color.Orange;
+        else
+            _lblTimer.ForeColor = Color.Red;
+    
+        if (t <= 10)
+            _lblTimer.Font = new Font(_lblTimer.Font.FontFamily, 28, FontStyle.Bold);
+        else
+            _lblTimer.Font = new Font(_lblTimer.Font.FontFamily, 24, FontStyle.Bold);
+    }
+    private void AppendChat(string message, Color color)
+    {
+        if (InvokeRequired)
+        {
+            Invoke(() => AppendChat(message, color));
+            return;
+        }
+    
+        _chatBox.SelectionStart = _chatBox.TextLength;
+        _chatBox.SelectionLength = 0;
+    
+        _chatBox.SelectionColor = color;
+        _chatBox.AppendText(message + Environment.NewLine);
+    
+        _chatBox.SelectionColor = _chatBox.ForeColor;
+        _chatBox.ScrollToCaret();
     }
 }
