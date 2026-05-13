@@ -1,3 +1,4 @@
+
 using Client.Controls;
 using Client.Services;
 using Client.State;
@@ -115,6 +116,7 @@ public sealed class GameForm : Form
         _btnReady.Height = 40;
 
         Controls.Add(_btnReady);
+
         _uiTimer = new System.Windows.Forms.Timer();
         _uiTimer.Interval = 500;
         _uiTimer.Tick += (_, _) => AnimateTimer();
@@ -128,15 +130,19 @@ public sealed class GameForm : Form
         _dispatcher.HintReceived += UpdateHint;
         _dispatcher.WordOptionsReceived += ShowWordSelection;
 
+        _dispatcher.RoundEnded += ShowRoundResult;
+        _dispatcher.GameEnded += ShowGameResult;
+
         _btnReady.Click += BtnReady_Click;
         _btnSend.Click += BtnSend_Click;
 
         _txtGuess.KeyDown += TxtGuess_KeyDown;
+
         _dispatcher.SystemMessageReceived += msg =>
         {
             AppendChat("[System] " + msg, Color.Blue);
         };
-        
+
         _dispatcher.CorrectGuessReceived += () =>
         {
             AppendChat("✔ Correct guess!", Color.LimeGreen);
@@ -193,37 +199,37 @@ public sealed class GameForm : Form
             Invoke(() => UpdateScoreboard(players));
             return;
         }
-    
+
         _scoreboard.BeginUpdate();
         _scoreboard.Items.Clear();
-    
+
         foreach (var p in players)
         {
             string name = p.DisplayName;
-    
+
             if (p.IsHost)
                 name = "👑 " + name;
-    
+
             if (p.IsDrawer)
                 name = "✏️ " + name;
-    
+
             var item = new ListViewItem(name);
             item.SubItems.Add(p.Score.ToString());
-    
+
             if (p.IsDrawer)
             {
                 item.BackColor = Color.LightGoldenrodYellow;
                 item.Font = new Font(_scoreboard.Font, FontStyle.Bold);
             }
-    
+
             if (!p.IsConnected)
             {
                 item.ForeColor = Color.Gray;
             }
-    
+
             _scoreboard.Items.Add(item);
         }
-    
+
         _scoreboard.EndUpdate();
     }
 
@@ -234,14 +240,14 @@ public sealed class GameForm : Form
             Invoke(() => UpdateTimer(remaining));
             return;
         }
-    
+
         _lblTimer.Text = remaining.ToString();
-    
+
         _lblTimer.ForeColor =
             remaining <= 10 ? Color.Red :
             remaining <= 20 ? Color.Orange :
             Color.Green;
-    
+
         _state.LatestTimerValue = remaining;
     }
 
@@ -279,7 +285,46 @@ public sealed class GameForm : Form
             });
         }
     }
-    
+
+    private void ShowRoundResult()
+    {
+        if (InvokeRequired)
+        {
+            Invoke(ShowRoundResult);
+            return;
+        }
+
+        var results = _state.PlayerList
+            .Select(p => (p.DisplayName, p.Score))
+            .ToList();
+
+        var form = new ResultForm(
+            "Round Result",
+            results);
+
+        form.ShowDialog();
+    }
+
+    private void ShowGameResult()
+    {
+        if (InvokeRequired)
+        {
+            Invoke(ShowGameResult);
+            return;
+        }
+
+        var results = _state.PlayerList
+            .OrderByDescending(p => p.Score)
+            .Select(p => (p.DisplayName, p.Score))
+            .ToList();
+
+        var form = new ResultForm(
+            "Game Result",
+            results);
+
+        form.ShowDialog();
+    }
+
     private void AppendChat(string message, Color color)
     {
         if (InvokeRequired)
@@ -287,14 +332,28 @@ public sealed class GameForm : Form
             Invoke(() => AppendChat(message, color));
             return;
         }
-    
+
         _chatBox.SelectionStart = _chatBox.TextLength;
         _chatBox.SelectionLength = 0;
-    
+
         _chatBox.SelectionColor = color;
         _chatBox.AppendText(message + Environment.NewLine);
-    
+
         _chatBox.SelectionColor = _chatBox.ForeColor;
         _chatBox.ScrollToCaret();
     }
+
+    private void AnimateTimer()
+    {
+        if (_lastTimerValue == _state.LatestTimerValue)
+            return;
+
+        _lastTimerValue = _state.LatestTimerValue;
+
+        _lblTimer.Font = new Font(
+            "Segoe UI",
+            28,
+            FontStyle.Bold);
+    }
 }
+
