@@ -16,7 +16,7 @@ public sealed class RoomManager
         var roomCode = GenerateRoomCode();
         var room = new GameRoom(roomCode, ownerServerId);
 
-        room.AddPlayer(sessionId, new PlayerInfo(hostPlayerId, hostName, 0, true, true));
+        room.AddPlayer(sessionId, new PlayerInfo(hostPlayerId, hostName, 0, true, true, false));
 
         _rooms[roomCode] = room;
         return room;
@@ -39,7 +39,7 @@ public sealed class RoomManager
             throw new InvalidOperationException("Room is not accepting players.");
         }
 
-        room.AddPlayer(sessionId, new PlayerInfo(playerId, playerName, 0, false, true));
+        room.AddPlayer(sessionId, new PlayerInfo(playerId, playerName, 0, false, true, false));
         return room;
     }
 
