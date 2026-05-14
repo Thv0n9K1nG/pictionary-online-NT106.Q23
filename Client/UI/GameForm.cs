@@ -8,7 +8,7 @@ namespace Client.UI;
 
 public sealed class GameForm : Form
 {
-    private System.Windows.Forms.Timer _uiTimer;
+    private readonly System.Windows.Forms.Timer _uiTimer = new();
     private int _lastTimerValue;
     private readonly ClientState _state;
     private readonly SocketService _socketService;
@@ -115,7 +115,6 @@ public sealed class GameForm : Form
         _btnReady.Height = 40;
 
         Controls.Add(_btnReady);
-        _uiTimer = new System.Windows.Forms.Timer();
         _uiTimer.Interval = 500;
         _uiTimer.Tick += (_, _) => AnimateTimer();
         _uiTimer.Start();
@@ -127,6 +126,9 @@ public sealed class GameForm : Form
         _dispatcher.TimerUpdated += UpdateTimer;
         _dispatcher.HintReceived += UpdateHint;
         _dispatcher.WordOptionsReceived += ShowWordSelection;
+        _dispatcher.RoundEnded += ShowRoundResult;
+        _dispatcher.GameEnded += ShowGameResult;
+        _dispatcher.GameplayStateChanged += UpdateGameplayControls;
 
         _btnReady.Click += BtnReady_Click;
         _btnSend.Click += BtnSend_Click;
@@ -137,20 +139,24 @@ public sealed class GameForm : Form
             AppendChat("[System] " + msg, Color.Blue);
         };
         
-        _dispatcher.CorrectGuessReceived += () =>
+        _dispatcher.CorrectGuessReceived += (playerName, scoreAwarded) =>
         {
-            AppendChat("✔ Correct guess!", Color.LimeGreen);
+            var scoreText = scoreAwarded > 0 ? $" (+{scoreAwarded})" : string.Empty;
+            AppendChat($"{playerName} guessed correctly{scoreText}.", Color.ForestGreen);
         };
+
+        FormClosed += (_, _) => _uiTimer.Stop();
+        UpdateGameplayControls();
     }
 
     private async void BtnReady_Click(
         object? sender,
         EventArgs e)
     {
-        await _socketService.SendAsync(new GameMessage
-        {
-            Type = MessageType.Ready
-        });
+        if (!EnsureGameplayContext())
+            return;
+
+        await _socketService.SendAsync(GameMessageFactory.Ready(_state.RoomCode!, _state.SessionId!));
 
         _btnReady.Enabled = false;
     }
@@ -162,14 +168,13 @@ public sealed class GameForm : Form
         if (string.IsNullOrWhiteSpace(_txtGuess.Text))
             return;
 
-        await _socketService.SendAsync(new GameMessage
-        {
-            Type = MessageType.Guess,
-            Payload = new
-            {
-                message = _txtGuess.Text
-            }
-        });
+        if (!EnsureGameplayContext())
+            return;
+
+        await _socketService.SendAsync(GameMessageFactory.Guess(
+            _state.RoomCode!,
+            _txtGuess.Text.Trim(),
+            _state.SessionId!));
 
         _txtGuess.Clear();
     }
@@ -202,10 +207,10 @@ public sealed class GameForm : Form
             string name = p.DisplayName;
     
             if (p.IsHost)
-                name = "👑 " + name;
+                name = "[Host] " + name;
     
             if (p.IsDrawer)
-                name = "✏️ " + name;
+                name = "[Draw] " + name;
     
             var item = new ListViewItem(name);
             item.SubItems.Add(p.Score.ToString());
@@ -225,6 +230,7 @@ public sealed class GameForm : Form
         }
     
         _scoreboard.EndUpdate();
+        UpdateGameplayControls();
     }
 
     private void UpdateTimer(int remaining)
@@ -265,19 +271,98 @@ public sealed class GameForm : Form
             return;
         }
 
-        var form = new WordSelectionForm(words);
+        using var form = new WordSelectionForm(words);
 
         if (form.ShowDialog() == DialogResult.OK)
         {
-            _ = _socketService.SendAsync(new GameMessage
-            {
-                Type = MessageType.SelectWord,
-                Payload = new
-                {
-                    word = form.SelectedWord
-                }
-            });
+            if (!EnsureGameplayContext())
+                return;
+
+            _ = _socketService.SendAsync(GameMessageFactory.SelectWord(
+                _state.RoomCode!,
+                form.SelectedWord,
+                _state.SessionId!));
         }
+    }
+
+    private void ShowRoundResult(List<PlayerInfo> players, bool gameEnded)
+    {
+        if (InvokeRequired)
+        {
+            Invoke(() => ShowRoundResult(players, gameEnded));
+            return;
+        }
+
+        UpdateScoreboard(players);
+
+        if (!gameEnded)
+        {
+            using var result = new ResultForm(
+                "Round result",
+                players.Select(player => (player.DisplayName, player.Score)).ToList());
+            result.ShowDialog(this);
+            _btnReady.Enabled = true;
+        }
+    }
+
+    private void ShowGameResult(MatchResult result)
+    {
+        if (InvokeRequired)
+        {
+            Invoke(() => ShowGameResult(result));
+            return;
+        }
+
+        var rows = result.FinalScores
+            .Select(score =>
+            {
+                var name = _state.PlayerList.FirstOrDefault(player => player.PlayerId == score.Key)?.DisplayName ?? score.Key;
+                return (name, score.Value);
+            })
+            .OrderByDescending(row => row.Value)
+            .ToList();
+
+        using var form = new ResultForm("Game result", rows);
+        form.ShowDialog(this);
+        UpdateGameplayControls();
+    }
+
+    private void UpdateGameplayControls()
+    {
+        if (InvokeRequired)
+        {
+            Invoke(UpdateGameplayControls);
+            return;
+        }
+
+        _canvas.CanDraw = _state.IsDrawer && _state.CurrentGameState == GameState.Drawing;
+        _txtGuess.Enabled = !_state.IsDrawer && _state.CurrentGameState == GameState.Drawing;
+        _btnSend.Enabled = _txtGuess.Enabled;
+        _btnReady.Enabled =
+            _state.CurrentGameState is GameState.Waiting or GameState.RoundEnd &&
+            !string.IsNullOrWhiteSpace(_state.RoomCode) &&
+            !string.IsNullOrWhiteSpace(_state.SessionId);
+    }
+
+    private bool EnsureGameplayContext()
+    {
+        if (!string.IsNullOrWhiteSpace(_state.RoomCode) &&
+            !string.IsNullOrWhiteSpace(_state.SessionId))
+        {
+            return true;
+        }
+
+        AppendChat("[System] Missing room or session. Please rejoin the room.", Color.Firebrick);
+        return false;
+    }
+
+    private void AnimateTimer()
+    {
+        if (_lastTimerValue == _state.LatestTimerValue)
+            return;
+
+        _lastTimerValue = _state.LatestTimerValue;
+        _lblTimer.Font = new Font(_lblTimer.Font, FontStyle.Bold);
     }
     
     private void AppendChat(string message, Color color)
