@@ -58,4 +58,40 @@ public static class GameMessageFactory
             Payload = new { roomCode, drawPayload = payload, sessionId }
         };
     }
+
+    public static GameMessage Ready(string roomCode, string sessionId)
+    {
+        return new GameMessage
+        {
+            Type = MessageType.Ready,
+            Payload = new { roomCode, sessionId }
+        };
+    }
+
+    public static GameMessage SelectWord(string roomCode, string word, string sessionId)
+    {
+        return new GameMessage
+        {
+            Type = MessageType.SelectWord,
+            Payload = new { roomCode, word, sessionId }
+        };
+    }
+
+    public static GameMessage Guess(string roomCode, string guess, string sessionId)
+    {
+        return new GameMessage
+        {
+            Type = MessageType.Guess,
+            Payload = new { roomCode, guess, sessionId }
+        };
+    }
+
+    public static GameMessage Chat(string roomCode, string text, string sessionId)
+    {
+        return new GameMessage
+        {
+            Type = MessageType.Chat,
+            Payload = new { roomCode, text, sessionId }
+        };
+    }
 }
