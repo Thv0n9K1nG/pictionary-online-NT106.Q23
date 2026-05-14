@@ -1,4 +1,3 @@
-
 using Client.Controls;
 using Client.Services;
 using Client.State;
@@ -9,7 +8,7 @@ namespace Client.UI;
 
 public sealed class GameForm : Form
 {
-    private System.Windows.Forms.Timer _uiTimer;
+    private readonly System.Windows.Forms.Timer _uiTimer = new();
     private int _lastTimerValue;
     private readonly ClientState _state;
     private readonly SocketService _socketService;
@@ -116,8 +115,6 @@ public sealed class GameForm : Form
         _btnReady.Height = 40;
 
         Controls.Add(_btnReady);
-
-        _uiTimer = new System.Windows.Forms.Timer();
         _uiTimer.Interval = 500;
         _uiTimer.Tick += (_, _) => AnimateTimer();
         _uiTimer.Start();
@@ -129,34 +126,37 @@ public sealed class GameForm : Form
         _dispatcher.TimerUpdated += UpdateTimer;
         _dispatcher.HintReceived += UpdateHint;
         _dispatcher.WordOptionsReceived += ShowWordSelection;
-
         _dispatcher.RoundEnded += ShowRoundResult;
         _dispatcher.GameEnded += ShowGameResult;
+        _dispatcher.GameplayStateChanged += UpdateGameplayControls;
 
         _btnReady.Click += BtnReady_Click;
         _btnSend.Click += BtnSend_Click;
 
         _txtGuess.KeyDown += TxtGuess_KeyDown;
-
         _dispatcher.SystemMessageReceived += msg =>
         {
             AppendChat("[System] " + msg, Color.Blue);
         };
-
-        _dispatcher.CorrectGuessReceived += () =>
+        
+        _dispatcher.CorrectGuessReceived += (playerName, scoreAwarded) =>
         {
-            AppendChat("✔ Correct guess!", Color.LimeGreen);
+            var scoreText = scoreAwarded > 0 ? $" (+{scoreAwarded})" : string.Empty;
+            AppendChat($"{playerName} guessed correctly{scoreText}.", Color.ForestGreen);
         };
+
+        FormClosed += (_, _) => _uiTimer.Stop();
+        UpdateGameplayControls();
     }
 
     private async void BtnReady_Click(
         object? sender,
         EventArgs e)
     {
-        await _socketService.SendAsync(new GameMessage
-        {
-            Type = MessageType.Ready
-        });
+        if (!EnsureGameplayContext())
+            return;
+
+        await _socketService.SendAsync(GameMessageFactory.Ready(_state.RoomCode!, _state.SessionId!));
 
         _btnReady.Enabled = false;
     }
@@ -168,14 +168,13 @@ public sealed class GameForm : Form
         if (string.IsNullOrWhiteSpace(_txtGuess.Text))
             return;
 
-        await _socketService.SendAsync(new GameMessage
-        {
-            Type = MessageType.Guess,
-            Payload = new
-            {
-                message = _txtGuess.Text
-            }
-        });
+        if (!EnsureGameplayContext())
+            return;
+
+        await _socketService.SendAsync(GameMessageFactory.Guess(
+            _state.RoomCode!,
+            _txtGuess.Text.Trim(),
+            _state.SessionId!));
 
         _txtGuess.Clear();
     }
@@ -199,38 +198,39 @@ public sealed class GameForm : Form
             Invoke(() => UpdateScoreboard(players));
             return;
         }
-
+    
         _scoreboard.BeginUpdate();
         _scoreboard.Items.Clear();
-
+    
         foreach (var p in players)
         {
             string name = p.DisplayName;
-
+    
             if (p.IsHost)
-                name = "👑 " + name;
-
+                name = "[Host] " + name;
+    
             if (p.IsDrawer)
-                name = "✏️ " + name;
-
+                name = "[Draw] " + name;
+    
             var item = new ListViewItem(name);
             item.SubItems.Add(p.Score.ToString());
-
+    
             if (p.IsDrawer)
             {
                 item.BackColor = Color.LightGoldenrodYellow;
                 item.Font = new Font(_scoreboard.Font, FontStyle.Bold);
             }
-
+    
             if (!p.IsConnected)
             {
                 item.ForeColor = Color.Gray;
             }
-
+    
             _scoreboard.Items.Add(item);
         }
-
+    
         _scoreboard.EndUpdate();
+        UpdateGameplayControls();
     }
 
     private void UpdateTimer(int remaining)
@@ -240,14 +240,14 @@ public sealed class GameForm : Form
             Invoke(() => UpdateTimer(remaining));
             return;
         }
-
+    
         _lblTimer.Text = remaining.ToString();
-
+    
         _lblTimer.ForeColor =
             remaining <= 10 ? Color.Red :
             remaining <= 20 ? Color.Orange :
             Color.Green;
-
+    
         _state.LatestTimerValue = remaining;
     }
 
@@ -271,76 +271,89 @@ public sealed class GameForm : Form
             return;
         }
 
-        var form = new WordSelectionForm(words);
+        using var form = new WordSelectionForm(words);
 
         if (form.ShowDialog() == DialogResult.OK)
         {
-            _ = _socketService.SendAsync(new GameMessage
+            if (!EnsureGameplayContext())
+                return;
+
+            _ = _socketService.SendAsync(GameMessageFactory.SelectWord(
+                _state.RoomCode!,
+                form.SelectedWord,
+                _state.SessionId!));
+        }
+    }
+
+    private void ShowRoundResult(List<PlayerInfo> players, bool gameEnded)
+    {
+        if (InvokeRequired)
+        {
+            Invoke(() => ShowRoundResult(players, gameEnded));
+            return;
+        }
+
+        UpdateScoreboard(players);
+
+        if (!gameEnded)
+        {
+            using var result = new ResultForm(
+                "Round result",
+                players.Select(player => (player.DisplayName, player.Score)).ToList());
+            result.ShowDialog(this);
+            _btnReady.Enabled = true;
+        }
+    }
+
+    private void ShowGameResult(MatchResult result)
+    {
+        if (InvokeRequired)
+        {
+            Invoke(() => ShowGameResult(result));
+            return;
+        }
+
+        var rows = result.FinalScores
+            .Select(score =>
             {
-                Type = MessageType.SelectWord,
-                Payload = new
-                {
-                    word = form.SelectedWord
-                }
-            });
-        }
-    }
-
-    private void ShowRoundResult()
-    {
-        if (InvokeRequired)
-        {
-            Invoke(ShowRoundResult);
-            return;
-        }
-
-        var results = _state.PlayerList
-            .Select(p => (p.DisplayName, p.Score))
+                var name = _state.PlayerList.FirstOrDefault(player => player.PlayerId == score.Key)?.DisplayName ?? score.Key;
+                return (name, score.Value);
+            })
+            .OrderByDescending(row => row.Value)
             .ToList();
 
-        var form = new ResultForm(
-            "Round Result",
-            results);
-
-        form.ShowDialog();
+        using var form = new ResultForm("Game result", rows);
+        form.ShowDialog(this);
+        UpdateGameplayControls();
     }
 
-    private void ShowGameResult()
+    private void UpdateGameplayControls()
     {
         if (InvokeRequired)
         {
-            Invoke(ShowGameResult);
+            Invoke(UpdateGameplayControls);
             return;
         }
 
-        var results = _state.PlayerList
-            .OrderByDescending(p => p.Score)
-            .Select(p => (p.DisplayName, p.Score))
-            .ToList();
-
-        var form = new ResultForm(
-            "Game Result",
-            results);
-
-        form.ShowDialog();
+        _canvas.CanDraw = _state.IsDrawer && _state.CurrentGameState == GameState.Drawing;
+        _txtGuess.Enabled = !_state.IsDrawer && _state.CurrentGameState == GameState.Drawing;
+        _btnSend.Enabled = _txtGuess.Enabled;
+        _btnReady.Enabled =
+            _state.CurrentGameState is GameState.Waiting or GameState.RoundEnd &&
+            !string.IsNullOrWhiteSpace(_state.RoomCode) &&
+            !string.IsNullOrWhiteSpace(_state.SessionId);
     }
 
-    private void AppendChat(string message, Color color)
+    private bool EnsureGameplayContext()
     {
-        if (InvokeRequired)
+        if (!string.IsNullOrWhiteSpace(_state.RoomCode) &&
+            !string.IsNullOrWhiteSpace(_state.SessionId))
         {
-            Invoke(() => AppendChat(message, color));
-            return;
+            return true;
         }
 
-        _chatBox.SelectionStart = _chatBox.TextLength;
-        _chatBox.SelectionLength = 0;
-
-        _chatBox.SelectionColor = color;
-        _chatBox.AppendText(message + Environment.NewLine);
-
-        _chatBox.SelectionColor = _chatBox.ForeColor;
-        _chatBox.ScrollToCaret();
+        AppendChat("[System] Missing room or session. Please rejoin the room.", Color.Firebrick);
+        return false;
     }
 
     private void AnimateTimer()
@@ -349,11 +362,24 @@ public sealed class GameForm : Form
             return;
 
         _lastTimerValue = _state.LatestTimerValue;
-
-        _lblTimer.Font = new Font(
-            "Segoe UI",
-            28,
-            FontStyle.Bold);
+        _lblTimer.Font = new Font(_lblTimer.Font, FontStyle.Bold);
+    }
+    
+    private void AppendChat(string message, Color color)
+    {
+        if (InvokeRequired)
+        {
+            Invoke(() => AppendChat(message, color));
+            return;
+        }
+    
+        _chatBox.SelectionStart = _chatBox.TextLength;
+        _chatBox.SelectionLength = 0;
+    
+        _chatBox.SelectionColor = color;
+        _chatBox.AppendText(message + Environment.NewLine);
+    
+        _chatBox.SelectionColor = _chatBox.ForeColor;
+        _chatBox.ScrollToCaret();
     }
 }
-
