@@ -27,7 +27,7 @@ public sealed class GameRoom
         {
             lock (_syncRoot)
             {
-                return _players.ToList();
+                return PlayersWithDrawerFlag();
             }
         }
     }
@@ -131,7 +131,7 @@ public sealed class GameRoom
             _correctGuessers.Clear();
             State = GameState.SelectingWord;
 
-            return _players.ToList();
+            return PlayersWithDrawerFlag();
         }
     }
 
@@ -258,6 +258,13 @@ public sealed class GameRoom
         {
             _players[index] = _players[index] with { Score = _players[index].Score + score };
         }
+    }
+
+    private List<PlayerInfo> PlayersWithDrawerFlag()
+    {
+        return _players
+            .Select(player => player with { IsDrawer = player.PlayerId == CurrentDrawerId })
+            .ToList();
     }
 
     public sealed record GuessResult(
