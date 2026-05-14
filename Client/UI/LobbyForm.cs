@@ -134,7 +134,7 @@ public sealed class LobbyForm : Form
         void OpenGame()
         {
             Hide();
-            new GameForm(_state, _socketService).ShowDialog();
+            new GameForm(_state, _socketService, _dispatcher).ShowDialog();
             Show();
         }
 
