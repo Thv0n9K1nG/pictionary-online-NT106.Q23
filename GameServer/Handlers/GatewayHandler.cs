@@ -91,6 +91,9 @@ public sealed class GatewayHandler
                 case MessageType.SelectWord:
                     await HandleSelectWordAsync(requestId, roomCode, playerId, innerMessage, stream, cancellationToken);
                     break;
+                case MessageType.Draw:
+                    await HandleDrawAsync(requestId, roomCode, playerId, innerMessage, stream, cancellationToken);
+                    break;
                 case MessageType.Guess:
                     await HandleGuessAsync(requestId, roomCode, playerId, innerMessage, stream, cancellationToken);
                     break;
@@ -206,6 +209,27 @@ public sealed class GatewayHandler
                 // Timer expiration is best-effort for the demo server.
             }
         });
+    }
+
+    private async Task HandleDrawAsync(
+        string? requestId,
+        string roomCode,
+        string playerId,
+        GameMessage message,
+        NetworkStream stream,
+        CancellationToken cancellationToken)
+    {
+        var payload = ReadDrawPayload(message.Payload)
+            ?? throw new InvalidOperationException("Missing draw payload.");
+
+        var result = _roomManager.ApplyDraw(roomCode, playerId, payload);
+        await SendSuccessAckAsync(requestId, stream, cancellationToken);
+
+        await SendTargetedRoomEventAsync(roomCode, result.TargetSessionIds, new GameMessage
+        {
+            Type = MessageType.DrawData,
+            Payload = new { roomCode, drawPayload = payload }
+        }, stream, cancellationToken);
     }
 
     private async Task HandleGuessAsync(
@@ -351,6 +375,28 @@ public sealed class GatewayHandler
 
         return innerMessageElement.Deserialize<GameMessage>(GameMessage.JsonOptions)
             ?? throw new InvalidOperationException("Invalid inner message.");
+    }
+
+    private static DrawPayload? ReadDrawPayload(object? payload)
+    {
+        if (payload is null)
+        {
+            return null;
+        }
+
+        if (payload is JsonElement element)
+        {
+            if (TryGetPropertyIgnoreCase(element, "drawPayload", out var drawPayloadElement))
+            {
+                return drawPayloadElement.Deserialize<DrawPayload>(GameMessage.JsonOptions);
+            }
+
+            return element.Deserialize<DrawPayload>(GameMessage.JsonOptions);
+        }
+
+        var json = JsonSerializer.Serialize(payload, GameMessage.JsonOptions);
+        using var doc = JsonDocument.Parse(json);
+        return ReadDrawPayload(doc.RootElement);
     }
 
     private static JsonElement ReadProperty(JsonElement element, string name)

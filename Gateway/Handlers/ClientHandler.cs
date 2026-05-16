@@ -159,6 +159,7 @@ public sealed class ClientHandler
                     break;
                 case MessageType.Ready:
                 case MessageType.SelectWord:
+                case MessageType.Draw:
                 case MessageType.Guess:
                 case MessageType.Chat:
                     await HandleGameplayMessageAsync(message, cancellationToken);

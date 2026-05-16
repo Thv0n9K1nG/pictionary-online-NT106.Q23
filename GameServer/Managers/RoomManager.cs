@@ -79,6 +79,14 @@ public sealed class RoomManager
         return new GuessResult(room, result);
     }
 
+    public DrawResult ApplyDraw(string roomCode, string playerId, DrawPayload payload)
+    {
+        var room = GetRoom(roomCode);
+        room.ValidateDraw(playerId, payload);
+
+        return new DrawResult(room.GetSessionIdsExcept(playerId));
+    }
+
     public GameRoom.RoundEndResult ExpireRound(string roomCode)
     {
         var room = GetRoom(roomCode);
@@ -138,4 +146,6 @@ public sealed class RoomManager
         DateTimeOffset RoundEndsAt);
 
     public sealed record GuessResult(GameRoom Room, GameRoom.GuessResult Result);
+
+    public sealed record DrawResult(IReadOnlyList<string> TargetSessionIds);
 }
