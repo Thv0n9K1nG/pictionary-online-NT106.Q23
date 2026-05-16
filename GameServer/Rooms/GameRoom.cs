@@ -206,6 +206,24 @@ public sealed class GameRoom
         }
     }
 
+    public void ValidateDraw(string playerId, DrawPayload payload)
+    {
+        _ = payload;
+
+        lock (_syncRoot)
+        {
+            if (State != GameState.Drawing)
+            {
+                throw new InvalidOperationException("No active drawing round.");
+            }
+
+            if (CurrentDrawerId != playerId)
+            {
+                throw new InvalidOperationException("Only the current drawer can draw.");
+            }
+        }
+    }
+
     public RoundEndResult ExpireRound(GameEngine engine)
     {
         lock (_syncRoot)
