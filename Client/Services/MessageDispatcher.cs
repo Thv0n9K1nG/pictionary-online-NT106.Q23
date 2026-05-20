@@ -91,6 +91,29 @@ public sealed class MessageDispatcher
                 _state.LastErrorMessage = GetMessageString(message.Payload) ?? "Error";
                 SystemMessageReceived?.Invoke(_state.LastErrorMessage);
                 break;
+            // (Bạn tìm đến khối switch (message.Type) trong file này và gắn thêm case dưới đây)
+
+            case MessageType.DrawData:
+                if (message.Payload is System.Text.Json.JsonElement drawElement)
+                {
+                    try
+                    {
+                        // Cấu hình không phân biệt chữ hoa/thường để khớp JSON
+                        var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                        var rawText = drawElement.TryGetProperty("drawPayload", out var inner) ? inner.GetRawText() : drawElement.GetRawText();
+                        var drawPayload = System.Text.Json.JsonSerializer.Deserialize<DrawPayload>(rawText, options);
+
+                        if (drawPayload is not null)
+                        {
+                            _state.TriggerDrawDataReceived(drawPayload);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Error] Parse DrawData failed: {ex.Message}");
+                    }
+                }
+                break;
         }
     }
 
