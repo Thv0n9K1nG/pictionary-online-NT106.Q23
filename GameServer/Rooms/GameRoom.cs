@@ -9,6 +9,7 @@ public sealed class GameRoom
     private readonly List<PlayerInfo> _players = new();
     private readonly Dictionary<string, string> _sessionByPlayerId = new();
     private readonly HashSet<string> _correctGuessers = new();
+    private readonly HashSet<int> _revealedLetterIndexes = new();
     private readonly object _syncRoot = new();
     private int _drawerIndex = -1;
 
@@ -38,10 +39,12 @@ public sealed class GameRoom
         ? sessionId
         : null;
     public string? CurrentWord { get; private set; }
+    public string? CurrentMaskedWord { get; private set; }
     public IReadOnlyList<string> WordOptions { get; private set; } = [];
     public DateTimeOffset? RoundStartedAt { get; private set; }
     public DateTimeOffset? RoundEndsAt { get; private set; }
     public int CompletedRounds { get; private set; }
+    public int RoundVersion { get; private set; }
 
     public void AddPlayer(string sessionId, PlayerInfo player)
     {
@@ -125,17 +128,19 @@ public sealed class GameRoom
 
             CurrentDrawerId = _players[_drawerIndex].PlayerId;
             CurrentWord = null;
+            CurrentMaskedWord = null;
             WordOptions = wordOptions.ToList();
             RoundStartedAt = null;
             RoundEndsAt = null;
             _correctGuessers.Clear();
+            _revealedLetterIndexes.Clear();
             State = GameState.SelectingWord;
 
             return PlayersWithDrawerFlag();
         }
     }
 
-    public void SelectWord(string playerId, string word)
+    public void SelectWord(string playerId, string word, GameEngine engine)
     {
         lock (_syncRoot)
         {
@@ -155,10 +160,38 @@ public sealed class GameRoom
             }
 
             CurrentWord = WordOptions.First(option => string.Equals(option, word, StringComparison.OrdinalIgnoreCase));
+            _revealedLetterIndexes.Clear();
+            CurrentMaskedWord = engine.BuildMaskedWord(CurrentWord, _revealedLetterIndexes);
             RoundStartedAt = DateTimeOffset.UtcNow;
             RoundEndsAt = RoundStartedAt.Value.AddSeconds(GameEngine.RoundSeconds);
+            RoundVersion++;
             _correctGuessers.Clear();
             State = GameState.Drawing;
+        }
+    }
+
+    public string? RevealRandomMaskedLetter(GameEngine engine, int minimumHiddenLettersBeforeReveal)
+    {
+        lock (_syncRoot)
+        {
+            if (State != GameState.Drawing || string.IsNullOrWhiteSpace(CurrentWord))
+            {
+                return null;
+            }
+
+            var hiddenIndexes = Enumerable.Range(0, CurrentWord.Length)
+                .Where(index => !char.IsWhiteSpace(CurrentWord[index]) && !_revealedLetterIndexes.Contains(index))
+                .ToList();
+
+            if (hiddenIndexes.Count <= minimumHiddenLettersBeforeReveal)
+            {
+                return null;
+            }
+
+            var selectedIndex = hiddenIndexes[Random.Shared.Next(hiddenIndexes.Count)];
+            _revealedLetterIndexes.Add(selectedIndex);
+            CurrentMaskedWord = engine.BuildMaskedWord(CurrentWord, _revealedLetterIndexes);
+            return CurrentMaskedWord;
         }
     }
 

@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using System.Text.Json;
+using GameServer.Engine;
 using GameServer.Managers;
 using GameServer.Rooms;
 using Shared.Enums;
@@ -191,24 +192,7 @@ public sealed class GatewayHandler
             Payload = new { roomCode, remainingSeconds = result.RemainingSeconds }
         }, stream, cancellationToken);
 
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(GameServer.Engine.GameEngine.RoundSeconds), CancellationToken.None);
-                var endResult = _roomManager.ExpireRound(roomCode);
-                if (!endResult.RoundEnded)
-                {
-                    return;
-                }
-
-                await SendRoundEndEventsAsync(roomCode, endResult.Players, endResult.GameEnded, stream, CancellationToken.None);
-            }
-            catch
-            {
-                // Timer expiration is best-effort for the demo server.
-            }
-        });
+        _ = Task.Run(() => RunRoundLoopAsync(roomCode, result.RoundVersion, stream), CancellationToken.None);
     }
 
     private async Task HandleDrawAsync(
@@ -295,6 +279,62 @@ public sealed class GatewayHandler
                 Type = MessageType.GameEnd,
                 Payload = room.ToMatchResult()
             }, stream, cancellationToken);
+        }
+    }
+
+    private async Task RunRoundLoopAsync(string roomCode, int roundVersion, NetworkStream stream)
+    {
+        try
+        {
+            for (var elapsedSeconds = 1; elapsedSeconds <= GameEngine.RoundSeconds; elapsedSeconds++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), CancellationToken.None);
+
+                if (!_roomManager.TryGetRoom(roomCode, out var room) ||
+                    room is null ||
+                    room.State != GameState.Drawing ||
+                    room.RoundVersion != roundVersion)
+                {
+                    return;
+                }
+
+                var remainingSeconds = Math.Max(0, GameEngine.RoundSeconds - elapsedSeconds);
+                await SendRoomEventAsync(roomCode, new GameMessage
+                {
+                    Type = MessageType.TimerUpdate,
+                    Payload = new { roomCode, remainingSeconds }
+                }, stream, CancellationToken.None);
+
+                if (elapsedSeconds < GameEngine.RoundSeconds &&
+                    elapsedSeconds % GameEngine.HintRevealIntervalSeconds == 0)
+                {
+                    var reveal = _roomManager.RevealHintLetter(roomCode);
+                    if (reveal is not null)
+                    {
+                        await SendTargetedRoomEventAsync(roomCode, reveal.GuesserSessionIds, new GameMessage
+                        {
+                            Type = MessageType.Hint,
+                            Payload = new
+                            {
+                                roomCode,
+                                maskedWord = reveal.MaskedWord,
+                                remainingSeconds,
+                                drawerId = reveal.Room.CurrentDrawerId
+                            }
+                        }, stream, CancellationToken.None);
+                    }
+                }
+            }
+
+            var endResult = _roomManager.ExpireRound(roomCode);
+            if (endResult.RoundEnded)
+            {
+                await SendRoundEndEventsAsync(roomCode, endResult.Players, endResult.GameEnded, stream, CancellationToken.None);
+            }
+        }
+        catch
+        {
+            // Round timer and hint sync stop when the internal connection is gone.
         }
     }
 

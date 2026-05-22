@@ -5,6 +5,8 @@ namespace GameServer.Engine;
 public sealed class GameEngine
 {
     public const int RoundSeconds = 60;
+    public const int HintRevealIntervalSeconds = 15;
+    public const int MinimumHiddenLettersBeforeReveal = 2;
 
     private readonly GeminiService _geminiService;
     private readonly WordBankService _wordBankService;
@@ -43,7 +45,17 @@ public sealed class GameEngine
 
     public string MaskWord(string word)
     {
-        return string.Join(" ", word.Select(ch => char.IsWhiteSpace(ch) ? '/' : '_'));
+        return BuildMaskedWord(word, new HashSet<int>());
+    }
+
+    public string BuildMaskedWord(string word, IReadOnlySet<int> revealedIndexes)
+    {
+        return string.Join(" ", word.Select((ch, index) =>
+            char.IsWhiteSpace(ch)
+                ? " "
+                : revealedIndexes.Contains(index)
+                    ? ch.ToString()
+                    : "_"));
     }
 
     public bool IsCorrectGuess(string guess, string word)
