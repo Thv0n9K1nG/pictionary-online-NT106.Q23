@@ -494,4 +494,4 @@ $RECYCLE.BIN/
 context/
 
 # Local summary
-./summary
+.summary/
