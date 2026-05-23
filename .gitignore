@@ -492,3 +492,6 @@ $RECYCLE.BIN/
 
 # Document
 context/
+
+# Local summary
+.summary/

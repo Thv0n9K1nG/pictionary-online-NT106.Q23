@@ -59,16 +59,17 @@ public sealed class RoomManager
         CancellationToken cancellationToken = default)
     {
         var room = GetRoom(roomCode);
-        room.SelectWord(playerId, word);
+        room.SelectWord(playerId, word, _gameEngine);
         var currentWord = room.CurrentWord ?? string.Empty;
 
         return new WordSelectedResult(
             room,
             await _gameEngine.GenerateHintAsync(currentWord, cancellationToken),
-            _gameEngine.MaskWord(currentWord),
+            room.CurrentMaskedWord ?? _gameEngine.MaskWord(currentWord),
             room.GetSessionIdsExcept(playerId),
             GameEngine.RoundSeconds,
-            room.RoundEndsAt ?? DateTimeOffset.UtcNow.AddSeconds(GameEngine.RoundSeconds));
+            room.RoundEndsAt ?? DateTimeOffset.UtcNow.AddSeconds(GameEngine.RoundSeconds),
+            room.RoundVersion);
     }
 
     public GuessResult Guess(string roomCode, string playerId, string guess)
@@ -85,6 +86,18 @@ public sealed class RoomManager
         room.ValidateDraw(playerId, payload);
 
         return new DrawResult(room.GetSessionIdsExcept(playerId));
+    }
+
+    public HintRevealResult? RevealHintLetter(string roomCode)
+    {
+        var room = GetRoom(roomCode);
+        var maskedWord = room.RevealRandomMaskedLetter(_gameEngine, GameEngine.MinimumHiddenLettersBeforeReveal);
+        if (string.IsNullOrWhiteSpace(maskedWord) || string.IsNullOrWhiteSpace(room.CurrentDrawerId))
+        {
+            return null;
+        }
+
+        return new HintRevealResult(room, maskedWord, room.GetSessionIdsExcept(room.CurrentDrawerId));
     }
 
     public GameRoom.RoundEndResult ExpireRound(string roomCode)
@@ -143,9 +156,15 @@ public sealed class RoomManager
         string MaskedWord,
         IReadOnlyList<string> GuesserSessionIds,
         int RemainingSeconds,
-        DateTimeOffset RoundEndsAt);
+        DateTimeOffset RoundEndsAt,
+        int RoundVersion);
 
     public sealed record GuessResult(GameRoom Room, GameRoom.GuessResult Result);
 
     public sealed record DrawResult(IReadOnlyList<string> TargetSessionIds);
+
+    public sealed record HintRevealResult(
+        GameRoom Room,
+        string MaskedWord,
+        IReadOnlyList<string> GuesserSessionIds);
 }

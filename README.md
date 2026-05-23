@@ -5,18 +5,16 @@
 ## Giảng viên hướng đẫn
 
 - Ths. Đỗ Thị Hương Lan
-  
 
 ## Thực hiện bởi nhóm 11 gồm:
 
 - Hồ Ngọc Vương Thương - 24521749
-  
+
 - Phạm Trần Anh Tuấn - 24521939
-  
+
 - Võ Đình Hoàng Tiến - 24521783
-  
+
 - Hà Võ Đức Thiện - 24521658
-  
 
 ## Lớp
 
@@ -55,3 +53,4 @@ dotnet run --project GameServer -- gs1 127.0.0.1 6000
 dotnet run --project Client
 
 Baseline hiện tại dựng skeleton compile được. Socket accept loop, Gateway relay, GameServer registration và gameplay implementation sẽ được phát triển theo timeline tuần 10-15.
+```
