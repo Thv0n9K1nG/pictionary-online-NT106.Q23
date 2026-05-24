@@ -4,6 +4,12 @@ using Shared.Models;
 using System.Text.Json;
 
 namespace Client.Services;
+// Thêm class này vào để hứng JSON tự động
+public class HintDto
+{
+    public string? Hint { get; set; }
+    public string? MaskedWord { get; set; }
+}
 
 public sealed class MessageDispatcher
 {
@@ -19,6 +25,7 @@ public sealed class MessageDispatcher
     public event Action<List<PlayerInfo>, bool>? RoundEnded;
     public event Action<MatchResult>? GameEnded;
     public event Action? GameplayStateChanged;
+
 
     public MessageDispatcher(ClientState state)
     {
@@ -202,37 +209,88 @@ public sealed class MessageDispatcher
 
     private void HandleTimer(GameMessage message)
     {
-        if (message.Payload is not JsonElement payload)
-            return;
+        if (message.Payload is not System.Text.Json.JsonElement payload) return;
 
-        if (!payload.TryGetProperty("remaining", out var remainingProp) &&
-            !payload.TryGetProperty("remainingSeconds", out remainingProp) &&
-            !payload.TryGetProperty("seconds", out remainingProp))
-            return;
+        int remaining = 0;
+        try
+        {
+            // Quét và bóc tách mọi định dạng mà Backend có thể gửi về
+            if (payload.ValueKind == System.Text.Json.JsonValueKind.Number) remaining = payload.GetInt32();
+            else if (payload.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                if (payload.TryGetProperty("remainingSeconds", out var prop) ||
+                    payload.TryGetProperty("remaining", out prop) ||
+                    payload.TryGetProperty("seconds", out prop))
+                {
+                    remaining = prop.GetInt32();
+                }
+                else return;
+            }
+            else if (payload.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                if (int.TryParse(payload.GetString(), out var parsed)) remaining = parsed;
+                else return;
+            }
+            else return;
 
-        int remaining = remainingProp.GetInt32();
-
-        _state.LatestTimerValue = remaining;
-
-        TimerUpdated?.Invoke(remaining);
+            // Báo cho GameForm biết
+            _state.LatestTimerValue = remaining;
+            TimerUpdated?.Invoke(remaining);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Lỗi giải mã Timer]: {ex.Message}");
+        }
     }
 
     private void HandleHint(GameMessage message)
     {
-        if (message.Payload is not JsonElement payload)
-            return;
+        if (message.Payload is not System.Text.Json.JsonElement payload) return;
 
-        if (!payload.TryGetProperty("hint", out var hintProp))
-            return;
-
-        HintReceived?.Invoke(hintProp.GetString() ?? "");
-        if (payload.TryGetProperty("maskedWord", out var maskedWordProp))
+        try
         {
-            HintReceived?.Invoke(maskedWordProp.GetString() ?? "");
+            string finalHint = "";
+
+            // Trường hợp 1: Payload là một chuỗi đơn giản
+            if (payload.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                finalHint = payload.GetString() ?? "";
+            }
+            // Trường hợp 2: Payload là Object JSON (Chứa maskedWord hoặc hint)
+            else if (payload.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                string masked = "";
+                string hint = "";
+
+                // Quét toàn bộ JSON để tìm biến, bất chấp viết hoa hay viết thường
+                foreach (var prop in payload.EnumerateObject())
+                {
+                    if (string.Equals(prop.Name, "maskedWord", StringComparison.OrdinalIgnoreCase))
+                        masked = prop.Value.GetString() ?? "";
+
+                    if (string.Equals(prop.Name, "hint", StringComparison.OrdinalIgnoreCase))
+                        hint = prop.Value.GetString() ?? "";
+                }
+
+                // Ưu tiên lấy MaskedWord (từ bị che), nếu không có mới xài Hint
+                finalHint = !string.IsNullOrEmpty(masked) ? masked : hint;
+            }
+
+            // Gửi dữ liệu an toàn sang GameForm
+            if (!string.IsNullOrEmpty(finalHint))
+            {
+                HintReceived?.Invoke(finalHint);
+            }
+
+            // Mở khóa giao diện
+            _state.CurrentGameState = GameState.Drawing;
+            _state.IsDrawer = false;
+            GameplayStateChanged?.Invoke();
         }
-        _state.CurrentGameState = GameState.Drawing;
-        _state.IsDrawer = false;
-        GameplayStateChanged?.Invoke();
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Lỗi giải mã Hint]: {ex.Message}");
+        }
     }
 
     private void HandleWordOptions(GameMessage message)
