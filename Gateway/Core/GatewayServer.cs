@@ -40,6 +40,7 @@ public sealed class GatewayServer
     // Các công cụ hỗ trợ kết nối và bảo mật
     private readonly TlsServerFactory _tlsServerFactory = new();
     private AuthService? _authService;
+    private PersistenceService? _persistenceService;
 
     public GatewayServer(int clientPort = 5000, int gameServerPort = 6000)
     {
@@ -54,13 +55,15 @@ public sealed class GatewayServer
         Console.WriteLine($"[Gateway] Cổng TCP cho GameServer : {_gameServerPort}");
 
         // 1. Khởi tạo Database (Lớp Dữ liệu)
-        var userRepository = new UserRepository("Data Source=pictionary.db");
+        const string connectionString = "Data Source=pictionary.db";
+        var userRepository = new UserRepository(connectionString);
         await userRepository.InitializeAsync(cancellationToken);
         Console.WriteLine("[Gateway] Database SQLite đã sẵn sàng.");
 
         // 2. Khởi tạo các Dịch vụ Nghiệp vụ (Lớp Service)
         var sessionService = new SessionService();
         _authService = new AuthService(userRepository, sessionService);
+        _persistenceService = new PersistenceService(connectionString);
 
         var loadBalancer = new LoadBalancer(_nodeRegistry);
         var proxyRouter = new ProxyRouter(_roomDirectory, _sessionDirectory);
@@ -185,7 +188,8 @@ public sealed class GatewayServer
                     stream,
                     _nodeRegistry,
                     _gameServerConnections,
-                    HandleServerEventAsync);
+                    HandleServerEventAsync,
+                    HandleMatchResultAsync);
                 await handler.HandleAsync(cancellationToken);
             }
         }
@@ -235,6 +239,24 @@ public sealed class GatewayServer
         {
             await client.SendAsync(message, cancellationToken);
         }
+    }
+
+    private async Task HandleMatchResultAsync(JsonElement payload, CancellationToken cancellationToken)
+    {
+        if (_persistenceService is null)
+        {
+            return;
+        }
+
+        var result = payload.Deserialize<MatchResult>(MessageJsonOptions);
+        if (result is null)
+        {
+            return;
+        }
+
+        // Member D: persist completed matches after gameplay leaves the realtime hot path.
+        await _persistenceService.SaveMatchResultAsync(result, cancellationToken);
+        Console.WriteLine($"[Gateway] Match persisted for room {result.RoomCode}.");
     }
 
     private static bool TryReadString(JsonElement element, string name, out string? value)
