@@ -50,11 +50,9 @@ public sealed class StatsPanel : UserControl
     private async Task RequestPlayerStatsAsync()
     {
         if (string.IsNullOrWhiteSpace(_state.SessionId)) return;
-
-        // Lưu ý: Tạm dùng (MessageType)996 vì MessageType chưa có GetPlayerStats
         var message = new GameMessage
         {
-            Type = (MessageType)996,
+            Type = MessageType.GetPlayerStats,
             Payload = new { sessionId = _state.SessionId }
         };
         await _socketService.SendAsync(message);
@@ -66,8 +64,7 @@ public sealed class StatsPanel : UserControl
 
         BeginInvoke(() =>
         {
-            // Lưu ý: Tạm dùng mã 997 đại diện cho PlayerStatsResult
-            if ((int)message.Type == 997)
+            if (message.Type == MessageType.PlayerStatsResult)
             {
                 RenderStats(message);
             }
