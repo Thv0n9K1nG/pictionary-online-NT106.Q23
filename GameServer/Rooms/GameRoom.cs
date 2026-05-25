@@ -10,6 +10,9 @@ public sealed class GameRoom
     private readonly Dictionary<string, string> _sessionByPlayerId = new();
     private readonly HashSet<string> _correctGuessers = new();
     private readonly HashSet<int> _revealedLetterIndexes = new();
+    private readonly Dictionary<string, int> _drawScores = new();
+    private readonly Dictionary<string, int> _guessScores = new();
+    private readonly Dictionary<string, int> _correctGuessCounts = new();
     private readonly object _syncRoot = new();
     private int _drawerIndex = -1;
 
@@ -222,6 +225,8 @@ public sealed class GameRoom
             var elapsedSeconds = (int)Math.Max(0, (DateTimeOffset.UtcNow - RoundStartedAt.Value).TotalSeconds);
             var score = engine.CalculateGuessScore(elapsedSeconds);
             AddScore(playerId, score);
+            AddTrackedScore(_guessScores, playerId, score);
+            AddTrackedScore(_correctGuessCounts, playerId, 1);
             _correctGuessers.Add(playerId);
 
             var allGuessersCorrect = _players
@@ -274,15 +279,33 @@ public sealed class GameRoom
 
     public MatchResult ToMatchResult()
     {
-        var finalScores = Players.ToDictionary(player => player.PlayerId, player => player.Score);
-        var winner = Players.OrderByDescending(player => player.Score).FirstOrDefault();
+        List<PlayerInfo> players;
+        Dictionary<string, int> finalScores;
+        PlayerInfo? winner;
+
+        lock (_syncRoot)
+        {
+            players = PlayersWithDrawerFlag();
+            finalScores = players.ToDictionary(player => player.PlayerId, player => player.Score);
+            winner = players.OrderByDescending(player => player.Score).FirstOrDefault();
+        }
 
         return new MatchResult(
             RoomCode,
             winner?.PlayerId ?? string.Empty,
             finalScores,
             RoundStartedAt ?? DateTimeOffset.UtcNow,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow)
+        {
+            Players = players.Select(player => new MatchPlayerResult(
+                player.PlayerId,
+                player.DisplayName,
+                player.Score,
+                _drawScores.GetValueOrDefault(player.PlayerId),
+                _guessScores.GetValueOrDefault(player.PlayerId),
+                _correctGuessCounts.GetValueOrDefault(player.PlayerId),
+                player.PlayerId == winner?.PlayerId)).ToList()
+        };
     }
 
     public void RestoreOwner(string ownerServerId)
@@ -294,7 +317,9 @@ public sealed class GameRoom
     {
         if (CurrentDrawerId is not null)
         {
-            AddScore(CurrentDrawerId, engine.CalculateDrawerScore(_correctGuessers.Count));
+            var drawerScore = engine.CalculateDrawerScore(_correctGuessers.Count);
+            AddScore(CurrentDrawerId, drawerScore);
+            AddTrackedScore(_drawScores, CurrentDrawerId, drawerScore);
         }
 
         CompletedRounds++;
@@ -310,6 +335,11 @@ public sealed class GameRoom
         {
             _players[index] = _players[index] with { Score = _players[index].Score + score };
         }
+    }
+
+    private static void AddTrackedScore(Dictionary<string, int> scores, string playerId, int score)
+    {
+        scores[playerId] = scores.GetValueOrDefault(playerId) + score;
     }
 
     private List<PlayerInfo> PlayersWithDrawerFlag()
