@@ -209,6 +209,7 @@ public sealed class GatewayHandler
         var result = _roomManager.ApplyDraw(roomCode, playerId, payload);
         await SendSuccessAckAsync(requestId, stream, cancellationToken);
 
+        // Member A: broadcast accepted drawing commands only to guessers, not back to the drawer.
         await SendTargetedRoomEventAsync(roomCode, result.TargetSessionIds, new GameMessage
         {
             Type = MessageType.DrawData,
