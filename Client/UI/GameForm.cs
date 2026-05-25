@@ -278,13 +278,14 @@ public sealed class GameForm : Form
 
         toolbarPanel.Visible = _state.IsDrawer;
 
+        // Keep the timer alive for both drawer and guessers while a round is active.
         if (_state.IsDrawer && _state.CurrentGameState == GameState.Drawing)
         {
             _lblHint.Text = "💡 Bạn đang vẽ! Hãy vẽ thật đẹp để mọi người cùng đoán nhé.";
             _lblHint.ForeColor = Color.ForestGreen;
         }
 
-        else
+        else if (_state.CurrentGameState != GameState.Drawing)
         {
             // Nếu thoát trạng thái chơi thì dừng đồng hồ ngay lập tức
             _countdownTimer.Stop();
