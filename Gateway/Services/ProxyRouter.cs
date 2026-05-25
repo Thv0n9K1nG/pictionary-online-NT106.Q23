@@ -36,6 +36,12 @@ public sealed class ProxyRouter
             throw new InvalidOperationException("Invalid session.");
         }
 
+        // Member A: only room members may send gameplay traffic to the room owner.
+        if (!string.Equals(session.RoomCode, roomCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Session is not in this room.");
+        }
+
         if (!_roomDirectory.TryGetOwner(roomCode, out var ownerServerId) || string.IsNullOrWhiteSpace(ownerServerId))
         {
             throw new InvalidOperationException("Room owner not found.");
