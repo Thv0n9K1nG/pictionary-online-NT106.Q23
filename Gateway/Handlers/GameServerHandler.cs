@@ -25,6 +25,8 @@ public sealed class GameServerHandler
     private readonly GameServerConnectionDirectory _connectionDirectory;
     private readonly Func<JsonElement, CancellationToken, Task> _serverEventHandler;
     private readonly Func<JsonElement, CancellationToken, Task> _matchResultHandler;
+    private readonly Func<JsonElement, CancellationToken, Task> _checkpointHandler;
+    private readonly Func<string, CancellationToken, Task> _recoveryHandler;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingRequests = new();
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
@@ -37,7 +39,9 @@ public sealed class GameServerHandler
         NodeRegistry nodeRegistry,
         GameServerConnectionDirectory connectionDirectory,
         Func<JsonElement, CancellationToken, Task> serverEventHandler,
-        Func<JsonElement, CancellationToken, Task> matchResultHandler)
+        Func<JsonElement, CancellationToken, Task> matchResultHandler,
+        Func<JsonElement, CancellationToken, Task> checkpointHandler,
+        Func<string, CancellationToken, Task> recoveryHandler)
     {
         _tcpClient = tcpClient;
         _stream = stream;
@@ -45,6 +49,8 @@ public sealed class GameServerHandler
         _connectionDirectory = connectionDirectory;
         _serverEventHandler = serverEventHandler;
         _matchResultHandler = matchResultHandler;
+        _checkpointHandler = checkpointHandler;
+        _recoveryHandler = recoveryHandler;
     }
 
     public async Task SendAsync(GameMessage message, CancellationToken cancellationToken = default)
@@ -186,6 +192,9 @@ public sealed class GameServerHandler
                 case InternalMessageType.MatchResult:
                     return _matchResultHandler(message.Payload, cancellationToken);
 
+                case InternalMessageType.RoomCheckpoint:
+                    return _checkpointHandler(message.Payload, cancellationToken);
+
                 default:
                     Console.WriteLine($"[Gateway][GameServer:{ShortServerName}] Internal message = {message.Type} (not handled in Stage 3)");
                     break;
@@ -276,6 +285,9 @@ public sealed class GameServerHandler
 
         _connectionDirectory.Remove(ServerId);
         Console.WriteLine($"[Gateway] GameServer offline: {ServerId}");
+
+        var failedServerId = ServerId;
+        _ = Task.Run(() => _recoveryHandler(failedServerId, CancellationToken.None), CancellationToken.None);
     }
 
     private async Task HandleServerEventAsync(InternalMessageEnvelope message, CancellationToken cancellationToken)
