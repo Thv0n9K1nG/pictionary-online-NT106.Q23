@@ -14,15 +14,18 @@ public sealed class GatewayHandler
 {
     private readonly string _serverId;
     private readonly RoomManager _roomManager;
+    private readonly CheckpointService _checkpointService;
     private readonly Func<NetworkStream, InternalMessageType, object, CancellationToken, Task> _sendInternalAsync;
 
     public GatewayHandler(
         string serverId,
         RoomManager roomManager,
+        CheckpointService checkpointService,
         Func<NetworkStream, InternalMessageType, object, CancellationToken, Task> sendInternalAsync)
     {
         _serverId = serverId;
         _roomManager = roomManager;
+        _checkpointService = checkpointService;
         _sendInternalAsync = sendInternalAsync;
     }
 
@@ -44,6 +47,9 @@ public sealed class GatewayHandler
             case InternalMessageType.ForwardClientMessage:
                 await HandleForwardClientMessageAsync(payload, stream, cancellationToken);
                 break;
+            case InternalMessageType.RestoreRoomFromCheckpoint:
+                await HandleRestoreRoomFromCheckpointAsync(payload, stream, cancellationToken);
+                break;
             default:
                 Console.WriteLine($"[GameServer:{_serverId}] Internal message {type} is not handled.");
                 break;
@@ -61,6 +67,7 @@ public sealed class GatewayHandler
 
             var room = _roomManager.CreateRoom(sessionId, playerId, playerName, _serverId);
             await SendRoomResponseAsync(requestId, room, stream, cancellationToken);
+            await SendCheckpointAsync(room, stream, cancellationToken);
 
             Console.WriteLine($"[GameServer:{_serverId}] Created room {room.RoomCode}.");
         }
@@ -120,6 +127,7 @@ public sealed class GatewayHandler
     {
         var room = _roomManager.JoinRoom(roomCode, sessionId, playerId, playerName);
         await SendRoomResponseAsync(requestId, room, stream, cancellationToken);
+        await SendCheckpointAsync(room, stream, cancellationToken);
         Console.WriteLine($"[GameServer:{_serverId}] Player {playerId} joined room {room.RoomCode}.");
     }
 
@@ -132,6 +140,7 @@ public sealed class GatewayHandler
     {
         var result = await _roomManager.ReadyAsync(roomCode, playerId, cancellationToken);
         await SendSuccessAckAsync(requestId, stream, cancellationToken);
+        await SendCheckpointAsync(result.Room, stream, cancellationToken);
 
         await SendRoomEventAsync(roomCode, new GameMessage
         {
@@ -172,6 +181,7 @@ public sealed class GatewayHandler
 
         var result = await _roomManager.SelectWordAsync(roomCode, playerId, selectedWord, cancellationToken);
         await SendSuccessAckAsync(requestId, stream, cancellationToken);
+        await SendCheckpointAsync(result.Room, stream, cancellationToken);
 
         await SendTargetedRoomEventAsync(roomCode, result.GuesserSessionIds, new GameMessage
         {
@@ -209,6 +219,10 @@ public sealed class GatewayHandler
 
         var result = _roomManager.ApplyDraw(roomCode, playerId, payload);
         await SendSuccessAckAsync(requestId, stream, cancellationToken);
+        if (_roomManager.TryGetRoom(roomCode, out var checkpointRoom) && checkpointRoom is not null)
+        {
+            await SendCheckpointAsync(checkpointRoom, stream, cancellationToken);
+        }
 
         // Member A: broadcast accepted drawing commands only to guessers, not back to the drawer.
         await SendTargetedRoomEventAsync(roomCode, result.TargetSessionIds, new GameMessage
@@ -232,6 +246,7 @@ public sealed class GatewayHandler
 
         var result = _roomManager.Guess(roomCode, playerId, guess);
         await SendSuccessAckAsync(requestId, stream, cancellationToken);
+        await SendCheckpointAsync(result.Room, stream, cancellationToken);
 
         if (!result.Result.Correct)
         {
@@ -261,6 +276,38 @@ public sealed class GatewayHandler
         }
     }
 
+    private async Task HandleRestoreRoomFromCheckpointAsync(
+        JsonElement payload,
+        NetworkStream stream,
+        CancellationToken cancellationToken)
+    {
+        var requestId = ReadString(payload, "requestId");
+        try
+        {
+            var snapshot = payload.Deserialize<RoomSnapshot>(GameMessage.JsonOptions)
+                ?? throw new InvalidOperationException("Invalid room checkpoint.");
+            _checkpointService.ObserveVersion(snapshot.RoomCode, snapshot.Version);
+            var room = _roomManager.RestoreRoom(snapshot, _serverId);
+
+            // Stage 6 - A: acknowledge restore through the existing request/response channel.
+            await _sendInternalAsync(stream, InternalMessageType.ServerEvent, new
+            {
+                requestId,
+                success = true,
+                roomCode = room.RoomCode,
+                ownerServerId = _serverId,
+                roomInfo = RoomManager.ToRoomInfo(room)
+            }, cancellationToken);
+
+            await SendCheckpointAsync(room, stream, cancellationToken);
+            Console.WriteLine($"[GameServer:{_serverId}] Restored room {room.RoomCode} from checkpoint.");
+        }
+        catch (Exception ex)
+        {
+            await SendFailureAsync(requestId, ex.Message, stream, cancellationToken);
+        }
+    }
+
     private async Task SendRoundEndEventsAsync(
         string roomCode,
         IReadOnlyList<PlayerInfo> players,
@@ -286,6 +333,11 @@ public sealed class GatewayHandler
             var reporter = new MatchResultReporter((type, payload, token) =>
                 _sendInternalAsync(stream, type, payload, token));
             await reporter.ReportAsync(matchResult, cancellationToken);
+        }
+
+        if (_roomManager.TryGetRoom(roomCode, out var checkpointRoom) && checkpointRoom is not null)
+        {
+            await SendCheckpointAsync(checkpointRoom, stream, cancellationToken);
         }
     }
 
@@ -362,6 +414,12 @@ public sealed class GatewayHandler
         };
 
         return _sendInternalAsync(stream, InternalMessageType.ServerEvent, payload, cancellationToken);
+    }
+
+    private Task SendCheckpointAsync(GameRoom room, NetworkStream stream, CancellationToken cancellationToken)
+    {
+        var snapshot = _checkpointService.CreateSnapshot(room);
+        return _sendInternalAsync(stream, InternalMessageType.RoomCheckpoint, snapshot, cancellationToken);
     }
 
     private Task SendSuccessAckAsync(string? requestId, NetworkStream stream, CancellationToken cancellationToken)
