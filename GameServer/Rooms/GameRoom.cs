@@ -245,6 +245,7 @@ public sealed class GameRoom
 
         lock (_syncRoot)
         {
+            // Member A: the GameServer remains authoritative for draw permission and round state.
             if (State != GameState.Drawing)
             {
                 throw new InvalidOperationException("No active drawing round.");
