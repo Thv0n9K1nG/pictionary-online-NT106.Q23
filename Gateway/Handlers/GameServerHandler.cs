@@ -24,6 +24,7 @@ public sealed class GameServerHandler
     private readonly NodeRegistry _nodeRegistry;
     private readonly GameServerConnectionDirectory _connectionDirectory;
     private readonly Func<JsonElement, CancellationToken, Task> _serverEventHandler;
+    private readonly Func<JsonElement, CancellationToken, Task> _matchResultHandler;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingRequests = new();
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
@@ -35,13 +36,15 @@ public sealed class GameServerHandler
         NetworkStream stream,
         NodeRegistry nodeRegistry,
         GameServerConnectionDirectory connectionDirectory,
-        Func<JsonElement, CancellationToken, Task> serverEventHandler)
+        Func<JsonElement, CancellationToken, Task> serverEventHandler,
+        Func<JsonElement, CancellationToken, Task> matchResultHandler)
     {
         _tcpClient = tcpClient;
         _stream = stream;
         _nodeRegistry = nodeRegistry;
         _connectionDirectory = connectionDirectory;
         _serverEventHandler = serverEventHandler;
+        _matchResultHandler = matchResultHandler;
     }
 
     public async Task SendAsync(GameMessage message, CancellationToken cancellationToken = default)
@@ -179,6 +182,9 @@ public sealed class GameServerHandler
 
                 case InternalMessageType.ServerEvent:
                     return HandleServerEventAsync(message, cancellationToken);
+
+                case InternalMessageType.MatchResult:
+                    return _matchResultHandler(message.Payload, cancellationToken);
 
                 default:
                     Console.WriteLine($"[Gateway][GameServer:{ShortServerName}] Internal message = {message.Type} (not handled in Stage 3)");
