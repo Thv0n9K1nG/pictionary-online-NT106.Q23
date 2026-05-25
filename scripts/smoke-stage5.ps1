@@ -219,11 +219,31 @@ try {
             color = '#FF0000'
             brushSize = 6
             isEraser = $false
+            tool = 'Pen'
         }
     }
     $drawData = Read-UntilType $guesser 21
     if ([string]$drawData.payload.drawPayload.color -ne '#FF0000') {
         throw 'Guesser did not receive the drawer stroke.'
+    }
+
+    Send-SmokeMessage $drawer 'Draw' @{
+        roomCode = $roomCode
+        sessionId = $drawerSession
+        drawPayload = @{
+            x1 = 30
+            y1 = 40
+            x2 = 180
+            y2 = 140
+            color = '#0000FF'
+            brushSize = 6
+            isEraser = $false
+            tool = 'Rectangle'
+        }
+    }
+    $shapeData = Read-UntilType $guesser 21
+    if ([string]$shapeData.payload.drawPayload.tool -ne 'Rectangle') {
+        throw 'Shape drawing command did not preserve the selected tool.'
     }
 
     Send-SmokeMessage $guesser 'Draw' @{
@@ -237,6 +257,7 @@ try {
             color = '#000000'
             brushSize = 2
             isEraser = $false
+            tool = 'Pen'
         }
     }
     [void](Read-UntilType $guesser 29)
@@ -252,6 +273,7 @@ try {
             color = 'CLEAR'
             brushSize = 0
             isEraser = $false
+            tool = 'Pen'
         }
     }
     $clearData = Read-UntilType $guesser 21
