@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using GameServer.Engine;
 using GameServer.Rooms;
+using GameServer.Services;
 using Shared.Enums;
 using Shared.Models;
 
@@ -25,6 +26,13 @@ public sealed class RoomManager
     public bool TryGetRoom(string roomCode, out GameRoom? room)
     {
         return _rooms.TryGetValue(roomCode, out room);
+    }
+
+    public GameRoom RestoreRoom(RoomSnapshot snapshot, string ownerServerId)
+    {
+        var restored = GameRoom.FromSnapshot(snapshot, ownerServerId);
+        _rooms[snapshot.RoomCode] = restored;
+        return restored;
     }
 
     public GameRoom JoinRoom(string roomCode, string sessionId, string playerId, string playerName)
@@ -115,6 +123,13 @@ public sealed class RoomManager
         return _rooms.Values
             .Where(r => r.State == GameState.Waiting)
             .Select(ToRoomInfo)
+            .ToList();
+    }
+
+    public IReadOnlyList<RoomSnapshot> CreateSnapshots(CheckpointService checkpointService)
+    {
+        return _rooms.Values
+            .Select(checkpointService.CreateSnapshot)
             .ToList();
     }
 

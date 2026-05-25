@@ -20,6 +20,8 @@ namespace Gateway.Core;
 /// </summary>
 public sealed class GatewayServer
 {
+    private static readonly TimeSpan NodeHeartbeatTimeout = TimeSpan.FromSeconds(9);
+    private static readonly TimeSpan NodeMonitorInterval = TimeSpan.FromSeconds(3);
     private static readonly JsonSerializerOptions MessageJsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -41,6 +43,7 @@ public sealed class GatewayServer
     private readonly TlsServerFactory _tlsServerFactory = new();
     private AuthService? _authService;
     private PersistenceService? _persistenceService;
+    private RecoveryCoordinator? _recoveryCoordinator;
 
     public GatewayServer(int clientPort = 5000, int gameServerPort = 6000)
     {
@@ -67,7 +70,12 @@ public sealed class GatewayServer
 
         var loadBalancer = new LoadBalancer(_nodeRegistry);
         var proxyRouter = new ProxyRouter(_roomDirectory, _sessionDirectory);
-        var recoveryCoordinator = new RecoveryCoordinator(_nodeRegistry, _roomDirectory, _checkpointStore);
+        _recoveryCoordinator = new RecoveryCoordinator(
+            _nodeRegistry,
+            _roomDirectory,
+            _checkpointStore,
+            _gameServerConnections,
+            _clientConnections);
 
         Console.WriteLine("[Gateway] Các dịch vụ nội bộ đã khởi tạo:");
         Console.WriteLine($"  - Xác thực người dùng (AuthService)");
@@ -88,8 +96,9 @@ public sealed class GatewayServer
             // Chạy song song hai luồng chấp nhận kết nối
             var clientAcceptLoop = AcceptClientsAsync(clientListener, cancellationToken);
             var gameServerAcceptLoop = AcceptGameServersAsync(gameServerListener, cancellationToken);
+            var nodeMonitorLoop = MonitorGameServerHeartbeatsAsync(cancellationToken);
 
-            await Task.WhenAll(clientAcceptLoop, gameServerAcceptLoop);
+            await Task.WhenAll(clientAcceptLoop, gameServerAcceptLoop, nodeMonitorLoop);
         }
         catch (Exception ex)
         {
@@ -155,6 +164,22 @@ public sealed class GatewayServer
         }
     }
 
+    private async Task MonitorGameServerHeartbeatsAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(NodeMonitorInterval, cancellationToken);
+            var timedOutServers = _nodeRegistry.MarkTimedOutNodesOffline(NodeHeartbeatTimeout);
+
+            foreach (var serverId in timedOutServers)
+            {
+                _gameServerConnections.Remove(serverId);
+                Console.WriteLine($"[Gateway] GameServer heartbeat timeout: {serverId}");
+                _ = Task.Run(() => RecoverRoomsOwnedByAsync(serverId, CancellationToken.None), CancellationToken.None);
+            }
+        }
+    }
+
     private async Task AcceptGameServersAsync(TcpListener listener, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -189,7 +214,9 @@ public sealed class GatewayServer
                     _nodeRegistry,
                     _gameServerConnections,
                     HandleServerEventAsync,
-                    HandleMatchResultAsync);
+                    HandleMatchResultAsync,
+                    HandleRoomCheckpointAsync,
+                    RecoverRoomsOwnedByAsync);
                 await handler.HandleAsync(cancellationToken);
             }
         }
@@ -257,6 +284,28 @@ public sealed class GatewayServer
         // Member D: persist completed matches after gameplay leaves the realtime hot path.
         await _persistenceService.SaveMatchResultAsync(result, cancellationToken);
         Console.WriteLine($"[Gateway] Match persisted for room {result.RoomCode}.");
+    }
+
+    private Task HandleRoomCheckpointAsync(JsonElement payload, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+
+        var snapshot = payload.Deserialize<RoomSnapshot>(MessageJsonOptions);
+        if (snapshot is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        // Stage 6 - A: keep the latest room checkpoint in memory for fast failover.
+        _checkpointStore.Save(snapshot);
+        return Task.CompletedTask;
+    }
+
+    private Task RecoverRoomsOwnedByAsync(string failedServerId, CancellationToken cancellationToken)
+    {
+        return _recoveryCoordinator is null
+            ? Task.CompletedTask
+            : _recoveryCoordinator.RecoverRoomsOwnedByAsync(failedServerId, cancellationToken);
     }
 
     private static bool TryReadString(JsonElement element, string name, out string? value)

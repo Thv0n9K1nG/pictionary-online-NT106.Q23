@@ -13,6 +13,7 @@ public sealed class GameRoom
     private readonly Dictionary<string, int> _drawScores = new();
     private readonly Dictionary<string, int> _guessScores = new();
     private readonly Dictionary<string, int> _correctGuessCounts = new();
+    private readonly List<DrawPayload> _canvasCommands = new();
     private readonly object _syncRoot = new();
     private int _drawerIndex = -1;
 
@@ -99,6 +100,72 @@ public sealed class GameRoom
         }
     }
 
+    public RoomSnapshot ToSnapshot(long version)
+    {
+        lock (_syncRoot)
+        {
+            var remainingSeconds = RoundEndsAt is null
+                ? 0
+                : Math.Max(0, (int)Math.Ceiling((RoundEndsAt.Value - DateTimeOffset.UtcNow).TotalSeconds));
+
+            // Stage 6 - A: capture enough room state for another GameServer to resume ownership.
+            return new RoomSnapshot(
+                RoomCode,
+                State,
+                PlayersWithDrawerFlag(),
+                _players.ToDictionary(player => player.PlayerId, player => player.Score),
+                CurrentDrawerId,
+                CurrentMaskedWord,
+                remainingSeconds,
+                _correctGuessers.ToList(),
+                _canvasCommands.ToList(),
+                version,
+                DateTimeOffset.UtcNow)
+            {
+                OwnerServerId = OwnerServerId,
+                CurrentWord = CurrentWord,
+                CompletedRounds = CompletedRounds,
+                SessionIdsByPlayerId = new Dictionary<string, string>(_sessionByPlayerId)
+            };
+        }
+    }
+
+    public static GameRoom FromSnapshot(RoomSnapshot snapshot, string ownerServerId)
+    {
+        var room = new GameRoom(snapshot.RoomCode, ownerServerId);
+        lock (room._syncRoot)
+        {
+            room._players.AddRange(snapshot.Players.Select(player =>
+                player with { IsDrawer = player.PlayerId == snapshot.CurrentDrawerId }));
+
+            foreach (var player in room._players)
+            {
+                var sessionId = snapshot.SessionIdsByPlayerId.TryGetValue(player.PlayerId, out var savedSessionId)
+                    ? savedSessionId
+                    : player.PlayerId;
+                room._sessionByPlayerId[player.PlayerId] = sessionId;
+            }
+
+            room.State = snapshot.GameState;
+            room.CurrentDrawerId = snapshot.CurrentDrawerId;
+            room.CurrentWord = snapshot.CurrentWord;
+            room.CurrentMaskedWord = snapshot.CurrentWordMasked;
+            room.CompletedRounds = snapshot.CompletedRounds;
+            room.RoundVersion = Math.Max(0, (int)Math.Min(int.MaxValue, snapshot.Version));
+            room._drawerIndex = room._players.FindIndex(player => player.PlayerId == snapshot.CurrentDrawerId);
+            room._correctGuessers.UnionWith(snapshot.GuessedPlayerIds);
+            room._canvasCommands.AddRange(snapshot.CanvasCommands);
+
+            if (snapshot.GameState == GameState.Drawing && snapshot.RemainingSeconds > 0)
+            {
+                room.RoundEndsAt = DateTimeOffset.UtcNow.AddSeconds(snapshot.RemainingSeconds);
+                room.RoundStartedAt = room.RoundEndsAt.Value.AddSeconds(-GameEngine.RoundSeconds);
+            }
+        }
+
+        return room;
+    }
+
     public IReadOnlyList<PlayerInfo> StartSelectingWords(string hostPlayerId, IReadOnlyList<string> wordOptions)
     {
         lock (_syncRoot)
@@ -135,6 +202,7 @@ public sealed class GameRoom
             WordOptions = wordOptions.ToList();
             RoundStartedAt = null;
             RoundEndsAt = null;
+            _canvasCommands.Clear();
             _correctGuessers.Clear();
             _revealedLetterIndexes.Clear();
             State = GameState.SelectingWord;
@@ -246,8 +314,6 @@ public sealed class GameRoom
 
     public void ValidateDraw(string playerId, DrawPayload payload)
     {
-        _ = payload;
-
         lock (_syncRoot)
         {
             // Member A: the GameServer remains authoritative for draw permission and round state.
@@ -260,6 +326,8 @@ public sealed class GameRoom
             {
                 throw new InvalidOperationException("Only the current drawer can draw.");
             }
+
+            _canvasCommands.Add(payload);
         }
     }
 

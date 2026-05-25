@@ -27,6 +27,30 @@ public sealed class NodeRegistry
         return _nodes.TryGetValue(serverId, out heartbeat);
     }
 
+    public IReadOnlyList<string> MarkTimedOutNodesOffline(TimeSpan timeout)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var timedOut = new List<string>();
+
+        foreach (var node in _nodes.Values)
+        {
+            if (node.Status != NodeStatus.Online || now - node.LastSeen <= timeout)
+            {
+                continue;
+            }
+
+            _nodes[node.ServerId] = node with
+            {
+                Status = NodeStatus.Offline,
+                CanAcceptRoom = false,
+                LastSeen = now
+            };
+            timedOut.Add(node.ServerId);
+        }
+
+        return timedOut;
+    }
+
     public void AdjustLoad(string serverId, int roomDelta, int playerDelta)
     {
         _nodes.AddOrUpdate(
