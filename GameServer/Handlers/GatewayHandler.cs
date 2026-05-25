@@ -3,6 +3,7 @@ using System.Text.Json;
 using GameServer.Engine;
 using GameServer.Managers;
 using GameServer.Rooms;
+using GameServer.Services;
 using Shared.Enums;
 using Shared.Models;
 using Shared.Protocol;
@@ -275,11 +276,16 @@ public sealed class GatewayHandler
 
         if (gameEnded && _roomManager.TryGetRoom(roomCode, out var room) && room is not null)
         {
+            var matchResult = room.ToMatchResult();
             await SendRoomEventAsync(roomCode, new GameMessage
             {
                 Type = MessageType.GameEnd,
-                Payload = room.ToMatchResult()
+                Payload = matchResult
             }, stream, cancellationToken);
+
+            var reporter = new MatchResultReporter((type, payload, token) =>
+                _sendInternalAsync(stream, type, payload, token));
+            await reporter.ReportAsync(matchResult, cancellationToken);
         }
     }
 
