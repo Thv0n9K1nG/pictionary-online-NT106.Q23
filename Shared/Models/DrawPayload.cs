@@ -7,5 +7,6 @@ public sealed record DrawPayload(
     int Y2,
     string Color,
     int BrushSize,
-    bool IsEraser
+    bool IsEraser,
+    string Tool = "Pen"
 );
