@@ -45,11 +45,10 @@ public sealed class HistoryForm : Form
     private async Task RequestMatchHistoryAsync()
     {
         if (string.IsNullOrWhiteSpace(_state.SessionId)) return;
-
-        // Lưu ý: Tạm dùng (MessageType)998 vì MessageType chưa có GetMatchHistory
+        
         var message = new GameMessage
         {
-            Type = (MessageType)998, 
+            Type = MessageType.GetMatchHistory,
             Payload = new { sessionId = _state.SessionId }
         };
         await _socketService.SendAsync(message);
@@ -61,8 +60,7 @@ public sealed class HistoryForm : Form
 
         BeginInvoke(() =>
         {
-            // Lưu ý: Tạm dùng mã 999 đại diện cho MatchHistoryResult
-            if ((int)message.Type == 999) 
+            if (message.Type == MessageType.MatchHistoryResult) 
             {
                 RenderHistory(message);
             }
