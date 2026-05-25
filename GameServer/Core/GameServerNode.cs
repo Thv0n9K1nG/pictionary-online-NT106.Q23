@@ -14,6 +14,7 @@ namespace GameServer.Core;
 public sealed class GameServerNode
 {
     private const int HeartbeatIntervalSeconds = 3;
+    private const int CheckpointIntervalSeconds = 5;
     private const int ReconnectDelaySeconds = 3;
 
     private readonly string _serverId;
@@ -46,7 +47,7 @@ public sealed class GameServerNode
         {
             try
             {
-                await RunGatewayConnectionAsync(cancellationToken);
+                await RunGatewayConnectionAsync(checkpointService, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -65,7 +66,7 @@ public sealed class GameServerNode
         }
     }
 
-    private async Task RunGatewayConnectionAsync(CancellationToken cancellationToken)
+    private async Task RunGatewayConnectionAsync(CheckpointService checkpointService, CancellationToken cancellationToken)
     {
         using var tcpClient = new TcpClient();
         await tcpClient.ConnectAsync(_gatewayHost, _gatewayPort, cancellationToken);
@@ -75,20 +76,19 @@ public sealed class GameServerNode
         await using var stream = tcpClient.GetStream();
         await SendNodeRegisterAsync(stream, cancellationToken);
 
-        var gatewayHandler = new GatewayHandler(_serverId, _roomManager, SendInternalMessageAsync);
+        var gatewayHandler = new GatewayHandler(_serverId, _roomManager, checkpointService, SendInternalMessageAsync);
         var receiveLoop = ReceiveLoopAsync(stream, gatewayHandler, cancellationToken);
         var heartbeatLoop = HeartbeatLoopAsync(stream, cancellationToken);
+        var checkpointLoop = CheckpointLoopAsync(stream, checkpointService, cancellationToken);
 
-        await Task.WhenAny(receiveLoop, heartbeatLoop);
+        await Task.WhenAny(receiveLoop, heartbeatLoop, checkpointLoop);
 
-        if (receiveLoop.IsFaulted)
+        foreach (var loop in new[] { receiveLoop, heartbeatLoop, checkpointLoop })
         {
-            await receiveLoop;
-        }
-
-        if (heartbeatLoop.IsFaulted)
-        {
-            await heartbeatLoop;
+            if (loop.IsFaulted)
+            {
+                await loop;
+            }
         }
     }
 
@@ -144,6 +144,29 @@ public sealed class GameServerNode
         {
             await SendNodeHeartbeatAsync(stream, cancellationToken);
             await Task.Delay(TimeSpan.FromSeconds(HeartbeatIntervalSeconds), cancellationToken);
+        }
+    }
+
+    private async Task CheckpointLoopAsync(
+        NetworkStream stream,
+        CheckpointService checkpointService,
+        CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(CheckpointIntervalSeconds), cancellationToken);
+            await SendRoomCheckpointsAsync(stream, checkpointService, cancellationToken);
+        }
+    }
+
+    public async Task SendRoomCheckpointsAsync(
+        NetworkStream stream,
+        CheckpointService checkpointService,
+        CancellationToken cancellationToken)
+    {
+        foreach (var snapshot in _roomManager.CreateSnapshots(checkpointService))
+        {
+            await SendInternalMessageAsync(stream, InternalMessageType.RoomCheckpoint, snapshot, cancellationToken);
         }
     }
 
