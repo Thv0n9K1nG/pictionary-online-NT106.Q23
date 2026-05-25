@@ -3,12 +3,17 @@ param(
     [int]$GameServerPort = 6702
 )
 
+# Stage 5 smoke test.
+# Member B: client canvas emits pen/shape/clear payloads and replays DRAW_DATA.
+# Member A: Gateway/GameServer route, validate, and broadcast DRAW commands authoritatively.
+
 $ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $tempRoot = Join-Path $env:TEMP ('pictionary-stage5-smoke-' + [guid]::NewGuid().ToString('N'))
 $gatewayWork = Join-Path $tempRoot 'gateway'
 $gameWork = Join-Path $tempRoot 'gameserver'
+$buildRoot = Join-Path $tempRoot 'build'
 New-Item -ItemType Directory -Path $gatewayWork -Force | Out-Null
 New-Item -ItemType Directory -Path $gameWork -Force | Out-Null
 
@@ -35,20 +40,19 @@ function Stop-SmokeProcesses {
 }
 
 function Start-Stage5Servers {
-    dotnet build (Join-Path $root 'PictionaryOnline.sln') | Out-Host
+    dotnet build (Join-Path $root 'PictionaryOnline.sln') -p:BaseOutputPath="$buildRoot\" -p:UseAppHost=false | Out-Host
+
+    $gatewayDll = Join-Path $buildRoot 'Debug\net8.0\Gateway.dll'
+    $gameServerDll = Join-Path $buildRoot 'Debug\net8.0\GameServer.dll'
 
     $gatewayArgs = @(
-        'run', '--no-build',
-        '--project', (Join-Path $root 'Gateway/Gateway.csproj'),
-        '--',
+        $gatewayDll,
         $GatewayPort,
         $GameServerPort
     )
 
     $gameArgs = @(
-        'run', '--no-build',
-        '--project', (Join-Path $root 'GameServer/GameServer.csproj'),
-        '--',
+        $gameServerDll,
         'stage5-smoke-gs1',
         '127.0.0.1',
         $GameServerPort
@@ -154,9 +158,12 @@ try {
     $password = 'stage5pw'
     $hostClient = New-SmokeClient 'host'
     $guestClient = New-SmokeClient 'guest'
+    $outsiderClient = New-SmokeClient 'outsider'
     $hostLogin = Register-And-Login $hostClient "s5host$suffix" $password
     $guestLogin = Register-And-Login $guestClient "s5guest$suffix" $password
+    $outsiderLogin = Register-And-Login $outsiderClient "s5outsider$suffix" $password
 
+    # Shared setup: create one playable room with two members.
     Send-SmokeMessage $hostClient 'CreateRoom' @{
         playerName = 'Host Smoke'
         sessionId = $hostLogin.SessionId
@@ -208,6 +215,7 @@ try {
         throw 'Initial masked hint is missing underscores.'
     }
 
+    # Member A/B: a valid drawer stroke must reach guessers as DRAW_DATA.
     Send-SmokeMessage $drawer 'Draw' @{
         roomCode = $roomCode
         sessionId = $drawerSession
@@ -227,6 +235,7 @@ try {
         throw 'Guesser did not receive the drawer stroke.'
     }
 
+    # Member B payload + Member A relay: shape tools must survive the network round-trip.
     Send-SmokeMessage $drawer 'Draw' @{
         roomCode = $roomCode
         sessionId = $drawerSession
@@ -246,6 +255,27 @@ try {
         throw 'Shape drawing command did not preserve the selected tool.'
     }
 
+    # Member A: a logged-in session that never joined the room must be rejected at Gateway.
+    Send-SmokeMessage $outsiderClient 'Draw' @{
+        roomCode = $roomCode
+        sessionId = $outsiderLogin.SessionId
+        drawPayload = @{
+            x1 = 5
+            y1 = 5
+            x2 = 25
+            y2 = 25
+            color = '#00AA00'
+            brushSize = 4
+            isEraser = $false
+            tool = 'Pen'
+        }
+    }
+    $outsiderError = Read-UntilType $outsiderClient 29
+    if ([string]$outsiderError.payload.message -ne 'Session is not in this room.') {
+        throw 'Gateway did not reject an out-of-room draw session.'
+    }
+
+    # Member A: guessers are room members, but they still cannot draw during someone else's turn.
     Send-SmokeMessage $guesser 'Draw' @{
         roomCode = $roomCode
         sessionId = $guesserSession
@@ -262,6 +292,7 @@ try {
     }
     [void](Read-UntilType $guesser 29)
 
+    # Member B/A: clear canvas uses the same DRAW_DATA path so every guesser clears together.
     Send-SmokeMessage $drawer 'Draw' @{
         roomCode = $roomCode
         sessionId = $drawerSession
@@ -281,6 +312,7 @@ try {
         throw 'Clear canvas command was not broadcast as DRAW_DATA.'
     }
 
+    # Sync hint: GameServer owns timed letter reveal and sends updated maskedWord to guessers.
     if ((Get-LetterCount $selectedWord) -gt 3) {
         $reveal = Read-UntilType $guesser 26 20000
         $revealedMasked = [string]$reveal.payload.maskedWord
