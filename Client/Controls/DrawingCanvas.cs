@@ -54,7 +54,7 @@ public sealed class DrawingCanvas : Panel
 
         if (CurrentTool == DrawTool.Pen)
         {
-            var payload = new DrawPayload(_lastPoint.Value.X, _lastPoint.Value.Y, e.Location.X, e.Location.Y, CurrentColor, BrushSize, IsEraser);
+            var payload = new DrawPayload(_lastPoint.Value.X, _lastPoint.Value.Y, e.Location.X, e.Location.Y, CurrentColor, BrushSize, IsEraser, DrawTool.Pen.ToString());
             DrawFromRemote(payload);
             LocalDraw?.Invoke(this, payload);
             _lastPoint = e.Location;
@@ -72,8 +72,8 @@ public sealed class DrawingCanvas : Panel
 
         if (CurrentTool != DrawTool.Pen)
         {
-            CommitShape(_graphics, _startShapePoint, e.Location);
-            var payload = new DrawPayload(_startShapePoint.X, _startShapePoint.Y, e.Location.X, e.Location.Y, CurrentColor, BrushSize, IsEraser);
+            CommitShape(_graphics, _startShapePoint, e.Location, CurrentTool, CurrentColor, BrushSize, IsEraser);
+            var payload = new DrawPayload(_startShapePoint.X, _startShapePoint.Y, e.Location.X, e.Location.Y, CurrentColor, BrushSize, IsEraser, CurrentTool.ToString());
             LocalDraw?.Invoke(this, payload);
             Invalidate();
         }
@@ -84,49 +84,115 @@ public sealed class DrawingCanvas : Panel
 
     private void CommitShape(Graphics g, Point start, Point end)
     {
-        using var pen = new Pen(IsEraser ? Color.White : ColorTranslator.FromHtml(CurrentColor), BrushSize)
+        CommitShape(g, start, end, CurrentTool, CurrentColor, BrushSize, IsEraser);
+    }
+
+    // Renders a complete drawing command so local previews and remote replay stay identical.
+    private static void CommitShape(Graphics g, Point start, Point end, DrawTool tool, string color, int brushSize, bool isEraser)
+    {
+        using var pen = CreatePen(color, brushSize, isEraser);
+        if (pen is null)
+        {
+            return;
+        }
+
+        var x = Math.Min(start.X, end.X);
+        var y = Math.Min(start.Y, end.Y);
+        var w = Math.Abs(start.X - end.X);
+        var h = Math.Abs(start.Y - end.Y);
+
+        switch (tool)
+        {
+            case DrawTool.Line:
+                g.DrawLine(pen, start, end);
+                break;
+            case DrawTool.Rectangle:
+                g.DrawRectangle(pen, x, y, w, h);
+                break;
+            case DrawTool.Ellipse:
+                g.DrawEllipse(pen, x, y, w, h);
+                break;
+            case DrawTool.Triangle:
+                var p1 = new Point(start.X + (end.X - start.X) / 2, start.Y);
+                var p2 = new Point(start.X, end.Y);
+                var p3 = new Point(end.X, end.Y);
+                g.DrawPolygon(pen, new[] { p1, p2, p3 });
+                break;
+            default:
+                g.DrawLine(pen, start, end);
+                break;
+        }
+    }
+
+    private static Pen? CreatePen(string color, int brushSize, bool isEraser)
+    {
+        Color resolvedColor;
+        try
+        {
+            resolvedColor = isEraser ? Color.White : ColorTranslator.FromHtml(color);
+        }
+        catch
+        {
+            return null;
+        }
+
+        return new Pen(resolvedColor, Math.Max(1, brushSize))
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
             LineJoin = LineJoin.Round
         };
+    }
 
-        int x = Math.Min(start.X, end.X);
-        int y = Math.Min(start.Y, end.Y);
-        int w = Math.Abs(start.X - end.X);
-        int h = Math.Abs(start.Y - end.Y);
+    private static DrawTool ParseTool(string? tool)
+    {
+        return Enum.TryParse<DrawTool>(tool, ignoreCase: true, out var parsed)
+            ? parsed
+            : DrawTool.Pen;
+    }
 
-        switch (CurrentTool)
+    private static bool IsClearCommand(DrawPayload payload)
+    {
+        return string.Equals(payload.Color, "CLEAR", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void DrawPenStroke(Graphics g, DrawPayload payload)
+    {
+        using var pen = CreatePen(payload.Color, payload.BrushSize, payload.IsEraser);
+        if (pen is null)
         {
-            case DrawTool.Line: g.DrawLine(pen, start, end); break;
-            case DrawTool.Rectangle: g.DrawRectangle(pen, x, y, w, h); break;
-            case DrawTool.Ellipse: g.DrawEllipse(pen, x, y, w, h); break;
-            case DrawTool.Triangle:
-                Point p1 = new Point(start.X + (end.X - start.X) / 2, start.Y);
-                Point p2 = new Point(start.X, end.Y);
-                Point p3 = new Point(end.X, end.Y);
-                g.DrawPolygon(pen, new Point[] { p1, p2, p3 });
-                break;
+            return;
         }
+
+        g.DrawLine(pen, payload.X1, payload.Y1, payload.X2, payload.Y2);
     }
 
     public void DrawFromRemote(DrawPayload payload)
     {
         if (_graphics == null) return;
-        //Hàm cho Clear.
-        if (payload.Color == "CLEAR")
+
+        if (IsClearCommand(payload))
         {
-            ClearCanvas(false); // Gọi hàm xóa bảng nhưng KHÔNG bắn ngược lại mạng (để tránh lặp vô tận)
+            ClearCanvas(false);
             return;
         }
-        using var pen = new Pen(payload.IsEraser ? Color.White : ColorTranslator.FromHtml(payload.Color), payload.BrushSize)
-        {
-            StartCap = LineCap.Round,
-            EndCap = LineCap.Round,
-            LineJoin = LineJoin.Round
-        };
 
-        _graphics.DrawLine(pen, payload.X1, payload.Y1, payload.X2, payload.Y2);
+        var tool = ParseTool(payload.Tool);
+        if (tool == DrawTool.Pen)
+        {
+            DrawPenStroke(_graphics, payload);
+        }
+        else
+        {
+            CommitShape(
+                _graphics,
+                new Point(payload.X1, payload.Y1),
+                new Point(payload.X2, payload.Y2),
+                tool,
+                payload.Color,
+                payload.BrushSize,
+                payload.IsEraser);
+        }
 
         if (InvokeRequired) Invoke(new Action(Invalidate));
         else Invalidate();
@@ -151,8 +217,7 @@ public sealed class DrawingCanvas : Panel
 
         if (triggerEvent)
         {
-            // Bắn một gói tin giả lập với mã màu "CLEAR" lên mạng
-            var payload = new DrawPayload(0, 0, 0, 0, "CLEAR", 0, false);
+            var payload = new DrawPayload(0, 0, 0, 0, "CLEAR", 0, false, DrawTool.Pen.ToString());
             LocalDraw?.Invoke(this, payload);
         }
     }
