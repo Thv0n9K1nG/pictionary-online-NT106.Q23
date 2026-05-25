@@ -16,7 +16,8 @@ public enum MessageType
     Guess,
     Chat,
     Reconnect,
-
+    GetMatchHistory,
+    GetPlayerStats,
     // Gateway -> Client
     RegisterSuccess,
     RegisterFailed,
@@ -35,5 +36,7 @@ public enum MessageType
     Hint,
     PlayerLeft,
     RoomRecovered,
-    Error
+    Error,
+    MatchHistoryResult,
+    PlayerStatsResult
 }
