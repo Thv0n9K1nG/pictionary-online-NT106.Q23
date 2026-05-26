@@ -252,6 +252,46 @@ static async Task<long> ScalarAsync(SqliteConnection connection, string sql, str
     }
 }
 
+function Assert-Stage6ClientQueries {
+    param(
+        $Client,
+        [string]$SessionId,
+        [string]$RoomCode
+    )
+
+    # Stage 6 - C: client stats/history requests should be served by Gateway from persisted data.
+    Send-SmokeMessage $Client 'GetPlayerStats' @{
+        sessionId = $SessionId
+    }
+    $stats = Read-UntilType $Client 33
+    if ([int]$stats.payload.totalMatches -lt 1 -or [int]$stats.payload.totalScore -lt 1) {
+        throw "Player stats were not updated after the completed match."
+    }
+
+    Send-SmokeMessage $Client 'GetMatchHistory' @{
+        sessionId = $SessionId
+        limit = 5
+    }
+    $history = Read-UntilType $Client 32
+    $matches = @($history.payload)
+    if ($matches.Count -lt 1 -or -not ($matches | Where-Object { [string]$_.roomCode -eq $RoomCode })) {
+        throw "Match history did not include room $RoomCode."
+    }
+}
+
+function Assert-Stage6Reconnect {
+    param(
+        [string]$SessionId
+    )
+
+    # Stage 6 - C: reconnect should re-bind an existing session and return room recovery info.
+    $reconnectClient = New-SmokeClient 'reconnect'
+    Send-SmokeMessage $reconnectClient 'Reconnect' @{
+        sessionId = $SessionId
+    }
+    [void](Read-UntilType $reconnectClient 28)
+}
+
 try {
     Start-Stage6Servers
 
@@ -278,7 +318,7 @@ try {
     [void](Read-UntilType $guestClient 17)
     [void](Read-UntilType $hostClient 18)
 
-    # Member D setup: finish a two-player game quickly so GAME_END produces MATCH_RESULT.
+    # Stage 6 - D setup: finish a two-player game quickly so GAME_END produces MATCH_RESULT.
     $roundOne = Play-One-Round $hostClient $guestClient $roomCode $hostLogin.SessionId $guestLogin.SessionId $hostLogin.PlayerId $guestLogin.PlayerId
     if ([bool]$roundOne.payload.gameEnded) {
         throw 'Game ended too early after one round.'
@@ -298,8 +338,10 @@ try {
         throw "Database not found at $databasePath"
     }
 
-    # Member D verification: SQLite has match header, player rows and aggregate stats.
+    # Stage 6 - D verification: SQLite has match header, player rows and aggregate stats.
     Assert-Stage6Database $databasePath $roomCode
+    Assert-Stage6ClientQueries $hostClient $hostLogin.SessionId $roomCode
+    Assert-Stage6Reconnect $hostLogin.SessionId
 
     Write-Host 'STAGE6_D_SMOKE_PASS'
 }
