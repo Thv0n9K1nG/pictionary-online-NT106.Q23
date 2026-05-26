@@ -79,18 +79,33 @@ public sealed class StatsPanel : UserControl
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            if (root.TryGetProperty("TotalMatches", out var totalMatches))
+            if (TryGetPropertyIgnoreCase(root, "totalMatches", out var totalMatches))
                 _lblTotalMatches.Text = $"Total Matches: {totalMatches.GetInt32()}";
                 
-            if (root.TryGetProperty("Wins", out var wins))
+            if (TryGetPropertyIgnoreCase(root, "wins", out var wins))
                 _lblWins.Text = $"Total Wins: {wins.GetInt32()}";
 
-            if (root.TryGetProperty("TotalScore", out var score))
+            if (TryGetPropertyIgnoreCase(root, "totalScore", out var score))
                 _lblTotalScore.Text = $"Total Score: {score.GetInt32()}";
         }
         catch
         {
             _lblTotalMatches.Text = "Error loading stats.";
         }
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 }
