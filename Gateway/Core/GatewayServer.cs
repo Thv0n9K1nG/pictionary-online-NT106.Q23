@@ -154,7 +154,8 @@ public sealed class GatewayServer
                     _nodeRegistry,
                     new LoadBalancer(_nodeRegistry),
                     _gameServerConnections,
-                    _clientConnections);
+                    _clientConnections,
+                    _persistenceService);
                 await handler.HandleAsync(cancellationToken);
             }
         }

@@ -5,6 +5,36 @@ namespace Gateway.Data;
 
 public sealed class PlayerStatsRepository
 {
+    public async Task<PlayerStatsResult> GetByUserIdAsync(
+        SqliteConnection connection,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+        SELECT totalMatches, totalWins, totalScore, totalCorrectGuesses, totalDrawScore, totalGuessScore
+        FROM PlayerStats
+        WHERE userId = $userId
+        LIMIT 1;
+        """;
+        command.Parameters.AddWithValue("$userId", userId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new PlayerStatsResult(userId, 0, 0, 0, 0, 0, 0);
+        }
+
+        return new PlayerStatsResult(
+            userId,
+            reader.GetInt32(0),
+            reader.GetInt32(1),
+            reader.GetInt32(2),
+            reader.GetInt32(3),
+            reader.GetInt32(4),
+            reader.GetInt32(5));
+    }
+
     public async Task UpsertAfterMatchAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -56,3 +86,12 @@ public sealed class PlayerStatsRepository
         }
     }
 }
+
+public sealed record PlayerStatsResult(
+    string UserId,
+    int TotalMatches,
+    int Wins,
+    int TotalScore,
+    int CorrectGuesses,
+    int DrawScore,
+    int GuessScore);

@@ -5,6 +5,60 @@ namespace Gateway.Data;
 
 public sealed class MatchRepository
 {
+    public async Task<IReadOnlyList<MatchResult>> GetHistoryByUserIdAsync(
+        SqliteConnection connection,
+        string userId,
+        int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var headers = new List<MatchHeader>();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+        SELECT m.matchId, m.roomCode, m.startedAt, m.endedAt, m.winnerUserId
+        FROM Matches m
+        WHERE EXISTS (
+            SELECT 1
+            FROM MatchPlayers mp
+            WHERE mp.matchId = m.matchId AND mp.userId = $userId
+        )
+        ORDER BY COALESCE(m.endedAt, m.startedAt) DESC
+        LIMIT $limit;
+        """;
+        command.Parameters.AddWithValue("$userId", userId);
+        command.Parameters.AddWithValue("$limit", limit);
+
+        {
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                headers.Add(new MatchHeader(
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    ReadDate(reader, 2),
+                    ReadDate(reader, 3),
+                    reader.IsDBNull(4) ? string.Empty : reader.GetString(4)));
+            }
+        }
+
+        var matches = new List<MatchResult>();
+        foreach (var header in headers)
+        {
+            var players = await GetPlayersForMatchAsync(connection, header.MatchId, cancellationToken);
+
+            matches.Add(new MatchResult(
+                header.RoomCode,
+                header.WinnerId,
+                players.ToDictionary(player => player.PlayerId, player => player.FinalScore),
+                header.StartedAt,
+                header.EndedAt)
+            {
+                Players = players
+            });
+        }
+
+        return matches;
+    }
+
     public async Task SaveAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -135,4 +189,49 @@ public sealed class MatchRepository
                 score.Key == result.WinnerId))
             .ToList();
     }
+
+    private static async Task<IReadOnlyList<MatchPlayerResult>> GetPlayersForMatchAsync(
+        SqliteConnection connection,
+        string matchId,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+        SELECT userId, displayName, finalScore, drawScore, guessScore, correctGuesses, isWinner
+        FROM MatchPlayers
+        WHERE matchId = $matchId
+        ORDER BY finalScore DESC, displayName ASC;
+        """;
+        command.Parameters.AddWithValue("$matchId", matchId);
+
+        var players = new List<MatchPlayerResult>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            players.Add(new MatchPlayerResult(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetInt32(2),
+                reader.GetInt32(3),
+                reader.GetInt32(4),
+                reader.GetInt32(5),
+                reader.GetInt32(6) == 1));
+        }
+
+        return players;
+    }
+
+    private static DateTimeOffset ReadDate(SqliteDataReader reader, int ordinal)
+    {
+        return reader.IsDBNull(ordinal) || !DateTimeOffset.TryParse(reader.GetString(ordinal), out var value)
+            ? DateTimeOffset.MinValue
+            : value;
+    }
+
+    private sealed record MatchHeader(
+        string MatchId,
+        string RoomCode,
+        DateTimeOffset StartedAt,
+        DateTimeOffset EndedAt,
+        string WinnerId);
 }
