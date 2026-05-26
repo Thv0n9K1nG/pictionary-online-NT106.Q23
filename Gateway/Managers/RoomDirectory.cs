@@ -29,6 +29,11 @@ public sealed class RoomDirectory
         return _roomOwners.TryGetValue(roomCode, out ownerServerId);
     }
 
+    public bool TryGetRoom(string roomCode, out RoomInfo? roomInfo)
+    {
+        return _rooms.TryGetValue(roomCode, out roomInfo);
+    }
+
     public IReadOnlyDictionary<string, string> GetAll()
     {
         return _roomOwners;

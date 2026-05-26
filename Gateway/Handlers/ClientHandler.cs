@@ -20,6 +20,7 @@ public sealed class ClientHandler
     private readonly ProxyRouter? _proxyRouter;
     private readonly GameServerConnectionDirectory? _gameServerConnections;
     private readonly ClientConnectionDirectory? _clientConnections;
+    private readonly PersistenceService? _persistenceService;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private static readonly JsonSerializerOptions RoomJsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -45,7 +46,8 @@ public sealed class ClientHandler
         NodeRegistry nodeRegistry,
         LoadBalancer loadBalancer,
         GameServerConnectionDirectory gameServerConnections,
-        ClientConnectionDirectory clientConnections)
+        ClientConnectionDirectory clientConnections,
+        PersistenceService? persistenceService = null)
         : this(stream, authService, sessionDirectory)
     {
         _roomDirectory = roomDirectory;
@@ -53,6 +55,7 @@ public sealed class ClientHandler
         _loadBalancer = loadBalancer;
         _gameServerConnections = gameServerConnections;
         _clientConnections = clientConnections;
+        _persistenceService = persistenceService;
         _proxyRouter = new ProxyRouter(roomDirectory, sessionDirectory, gameServerConnections);
     }
 
@@ -156,6 +159,15 @@ public sealed class ClientHandler
                     break;
                 case MessageType.GetRoomList:
                     await HandleGetRoomListAsync(cancellationToken);
+                    break;
+                case MessageType.Reconnect:
+                    await HandleReconnectAsync(message, cancellationToken);
+                    break;
+                case MessageType.GetMatchHistory:
+                    await HandleGetMatchHistoryAsync(message, cancellationToken);
+                    break;
+                case MessageType.GetPlayerStats:
+                    await HandleGetPlayerStatsAsync(message, cancellationToken);
                     break;
                 case MessageType.Ready:
                 case MessageType.SelectWord:
@@ -338,6 +350,84 @@ public sealed class ClientHandler
         }, cancellationToken);
     }
 
+    private async Task HandleReconnectAsync(GameMessage message, CancellationToken cancellationToken)
+    {
+        if (!TryResolveSession(message.Payload, out var session, out var sessionId, out var error))
+        {
+            await SendAsync(CreateError(MessageType.Error, error), cancellationToken);
+            return;
+        }
+
+        _currentSessionId = sessionId;
+        _clientConnections?.RegisterSession(sessionId, this);
+
+        var roomCode = session?.RoomCode;
+        if (!string.IsNullOrWhiteSpace(roomCode))
+        {
+            _clientConnections?.JoinRoom(roomCode, sessionId);
+            RoomInfo? roomInfo = null;
+            _roomDirectory?.TryGetRoom(roomCode, out roomInfo);
+
+            await SendAsync(new GameMessage
+            {
+                Type = MessageType.RoomRecovered,
+                Payload = new { roomCode, roomInfo }
+            }, cancellationToken);
+            return;
+        }
+
+        await SendAsync(new GameMessage
+        {
+            Type = MessageType.RoomRecovered,
+            Payload = new { roomCode = (string?)null }
+        }, cancellationToken);
+    }
+
+    private async Task HandleGetMatchHistoryAsync(GameMessage message, CancellationToken cancellationToken)
+    {
+        if (!TryResolveSession(message.Payload, out var session, out _, out var error))
+        {
+            await SendAsync(CreateError(MessageType.Error, error), cancellationToken);
+            return;
+        }
+
+        if (_persistenceService is null || session is null)
+        {
+            await SendAsync(CreateError(MessageType.Error, "Gateway persistence is not configured."), cancellationToken);
+            return;
+        }
+
+        var limit = ReadIntFromPayload(message.Payload, "limit", 20);
+        var history = await _persistenceService.GetMatchHistoryAsync(session.UserId, limit, cancellationToken);
+        await SendAsync(new GameMessage
+        {
+            Type = MessageType.MatchHistoryResult,
+            Payload = history
+        }, cancellationToken);
+    }
+
+    private async Task HandleGetPlayerStatsAsync(GameMessage message, CancellationToken cancellationToken)
+    {
+        if (!TryResolveSession(message.Payload, out var session, out _, out var error))
+        {
+            await SendAsync(CreateError(MessageType.Error, error), cancellationToken);
+            return;
+        }
+
+        if (_persistenceService is null || session is null)
+        {
+            await SendAsync(CreateError(MessageType.Error, "Gateway persistence is not configured."), cancellationToken);
+            return;
+        }
+
+        var stats = await _persistenceService.GetPlayerStatsAsync(session.UserId, cancellationToken);
+        await SendAsync(new GameMessage
+        {
+            Type = MessageType.PlayerStatsResult,
+            Payload = stats
+        }, cancellationToken);
+    }
+
     private async Task HandleGameplayMessageAsync(GameMessage message, CancellationToken cancellationToken)
     {
         if (_proxyRouter is null)
@@ -487,6 +577,23 @@ public sealed class ClientHandler
         return ReadStringProperty(doc.RootElement, name);
     }
 
+    private static int ReadIntFromPayload(object? payload, string name, int defaultValue)
+    {
+        if (payload is JsonElement element)
+        {
+            return ReadIntProperty(element, name, defaultValue);
+        }
+
+        if (payload is null)
+        {
+            return defaultValue;
+        }
+
+        var json = JsonSerializer.Serialize(payload, GameMessage.JsonOptions);
+        using var doc = JsonDocument.Parse(json);
+        return ReadIntProperty(doc.RootElement, name, defaultValue);
+    }
+
     private static string? ReadStringProperty(JsonElement element, string name)
     {
         if (TryGetPropertyIgnoreCase(element, name, out var property))
@@ -509,6 +616,21 @@ public sealed class ClientHandler
             JsonValueKind.True => true,
             JsonValueKind.False => false,
             JsonValueKind.String when bool.TryParse(property.GetString(), out var parsed) => parsed,
+            _ => defaultValue
+        };
+    }
+
+    private static int ReadIntProperty(JsonElement element, string name, int defaultValue)
+    {
+        if (!TryGetPropertyIgnoreCase(element, name, out var property))
+        {
+            return defaultValue;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.Number when property.TryGetInt32(out var number) => number,
+            JsonValueKind.String when int.TryParse(property.GetString(), out var parsed) => parsed,
             _ => defaultValue
         };
     }

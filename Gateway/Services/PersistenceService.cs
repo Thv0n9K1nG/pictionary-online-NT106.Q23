@@ -64,4 +64,23 @@ public sealed class PersistenceService
             throw;
         }
     }
+
+    public async Task<IReadOnlyList<MatchResult>> GetMatchHistoryAsync(
+        string userId,
+        int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await _matchRepository.GetHistoryByUserIdAsync(connection, userId, limit, cancellationToken);
+    }
+
+    public async Task<PlayerStatsResult> GetPlayerStatsAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await _playerStatsRepository.GetByUserIdAsync(connection, userId, cancellationToken);
+    }
 }
