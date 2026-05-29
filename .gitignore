@@ -495,3 +495,7 @@ context/
 
 # Local summary
 .summary/
+
+# Database
+*.db
+*.sqlite3
