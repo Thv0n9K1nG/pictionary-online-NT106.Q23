@@ -1,8 +1,6 @@
 using Client.Services;
 using Client.State;
 using Shared.Enums;
-using Shared.Models;
-using System;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -12,15 +10,15 @@ public sealed class LoginForm : Form
 {
     private readonly ClientState _state = new();
     private readonly SocketService _socketService = new();
-    private readonly MessageDispatcher _dispatcher; // Khai báo Dispatcher
+    private readonly MessageDispatcher _dispatcher;
 
     public LoginForm()
     {
-        _dispatcher = new MessageDispatcher(_state); // Khởi tạo Dispatcher truyền state vào
+        _dispatcher = new MessageDispatcher(_state);
 
         Text = "Pictionary Online - Login";
-        Width = 460;  // Mở rộng form một chút để đủ chỗ
-        Height = 360; // Tăng chiều cao
+        Width = 460;
+        Height = 360;
         StartPosition = FormStartPosition.CenterScreen;
 
         var title = new Label
@@ -34,117 +32,147 @@ public sealed class LoginForm : Form
 
         var info = new Label
         {
-            Text = "Baseline client: connect to Gateway only.",
+            Text = "Client connects to Gateway only.",
             AutoSize = true,
             Left = 30,
             Top = 60
         };
 
-        // --- CÁC TRƯỜNG NHẬP LIỆU GATEWAY (GIỮ NGUYÊN) ---
         var ipLabel = new Label { Text = "Gateway IP:", Left = 30, Top = 100, AutoSize = true };
         var ipInput = new TextBox { Text = "127.0.0.1", Left = 120, Top = 97, Width = 150 };
 
         var portLabel = new Label { Text = "Port:", Left = 30, Top = 130, AutoSize = true };
         var portInput = new TextBox { Text = "5000", Left = 120, Top = 127, Width = 80 };
 
-        // --- CÁC TRƯỜNG NHẬP LIỆU TÀI KHOẢN (MỚI) ---
         var userLabel = new Label { Text = "Username:", Left = 30, Top = 160, AutoSize = true };
         var userInput = new TextBox { Left = 120, Top = 157, Width = 150 };
 
         var passLabel = new Label { Text = "Password:", Left = 30, Top = 190, AutoSize = true };
         var passInput = new TextBox { Left = 120, Top = 187, Width = 150, UseSystemPasswordChar = true };
 
-        var statusLabel = new Label { Text = "Chưa kết nối.", Left = 30, Top = 230, AutoSize = true, ForeColor = Color.Gray };
+        var statusLabel = new Label { Text = "Not connected.", Left = 30, Top = 230, Width = 390, ForeColor = Color.Gray };
 
-        // --- CÁC NÚT TƯƠNG TÁC ---
         var connectButton = new Button { Text = "Connect", Left = 30, Top = 270, Width = 80 };
         var loginButton = new Button { Text = "Login", Left = 120, Top = 270, Width = 80, Enabled = false };
         var registerButton = new Button { Text = "Register", Left = 210, Top = 270, Width = 80, Enabled = false };
         var openLobbyButton = new Button { Text = "Open Lobby", Left = 300, Top = 270, Width = 100, Enabled = false };
 
-        // --- SỰ KIỆN LẮNG NGHE SOCKET (MỚI) ---
-        _socketService.MessageReceived += (sender, message) =>
+        _socketService.ReceiveError += (_, error) =>
         {
-            // Bắt buộc gọi Invoke để tương tác với UI từ một background thread
-            if (IsHandleCreated)
+            UpdateUiSafe(() =>
             {
-                Invoke(() => 
-                {
-                    _dispatcher.Dispatch(message);
-                    
-                    // Nếu Dispatcher xử lý Login thành công, mở khóa nút vào sảnh
-                    if (message.Type == MessageType.LoginSuccess)
-                    {
-                        statusLabel.Text = $"Xin chào, {_state.Username ?? userInput.Text}!";
-                        statusLabel.ForeColor = Color.Green;
-                        openLobbyButton.Enabled = true;
-                    }
-                });
-            }
+                statusLabel.Text = error;
+                statusLabel.ForeColor = Color.Red;
+            });
         };
 
-        // --- SỰ KIỆN KẾT NỐI ---
-        connectButton.Click += async (sender, args) =>
+        _socketService.ConnectionClosed += (_, _) =>
         {
-            string host = ipInput.Text.Trim();
-            if (!int.TryParse(portInput.Text.Trim(), out int port))
+            UpdateUiSafe(() =>
             {
-                statusLabel.Text = "Port không hợp lệ!";
+                if (string.IsNullOrWhiteSpace(_state.SessionId))
+                {
+                    connectButton.Enabled = true;
+                    loginButton.Enabled = false;
+                    registerButton.Enabled = false;
+                    openLobbyButton.Enabled = false;
+                    statusLabel.Text = "Disconnected from Gateway.";
+                    statusLabel.ForeColor = Color.Red;
+                }
+            });
+        };
+
+        _socketService.MessageReceived += (_, message) =>
+        {
+            UpdateUiSafe(() =>
+            {
+                _dispatcher.Dispatch(message);
+
+                switch (message.Type)
+                {
+                    case MessageType.LoginSuccess when !string.IsNullOrWhiteSpace(_state.SessionId):
+                        statusLabel.Text = $"Xin chao, {_state.Username ?? userInput.Text}!";
+                        statusLabel.ForeColor = Color.Green;
+                        openLobbyButton.Enabled = true;
+                        break;
+                    case MessageType.LoginSuccess:
+                        statusLabel.Text = "Login response did not include a sessionId.";
+                        statusLabel.ForeColor = Color.Red;
+                        openLobbyButton.Enabled = false;
+                        break;
+                    case MessageType.LoginFailed:
+                    case MessageType.RegisterFailed:
+                    case MessageType.Error:
+                        statusLabel.Text = _state.LastErrorMessage ?? "Request failed.";
+                        statusLabel.ForeColor = Color.Red;
+                        openLobbyButton.Enabled = false;
+                        break;
+                    case MessageType.RegisterSuccess:
+                        statusLabel.Text = "Register successful. You can login now.";
+                        statusLabel.ForeColor = Color.Green;
+                        break;
+                }
+            });
+        };
+
+        connectButton.Click += async (_, _) =>
+        {
+            var host = ipInput.Text.Trim();
+            if (!int.TryParse(portInput.Text.Trim(), out var port))
+            {
+                statusLabel.Text = "Invalid port.";
                 statusLabel.ForeColor = Color.Red;
                 return;
             }
 
-            statusLabel.Text = "Đang kết nối...";
+            statusLabel.Text = "Connecting...";
             statusLabel.ForeColor = Color.Blue;
             connectButton.Enabled = false;
 
             try
             {
                 await _socketService.ConnectAsync(host, port);
-                
-                statusLabel.Text = "Connected to Gateway!";
+
+                statusLabel.Text = "Connected to Gateway.";
                 statusLabel.ForeColor = Color.Green;
-                
-                // Mở khóa các nút đăng nhập / đăng ký
                 loginButton.Enabled = true;
                 registerButton.Enabled = true;
             }
             catch (Exception ex)
             {
-                statusLabel.Text = $"Kết nối thất bại: {ex.Message}";
+                statusLabel.Text = $"Connection failed: {ex.Message}";
                 statusLabel.ForeColor = Color.Red;
                 connectButton.Enabled = true;
             }
         };
 
-        // --- SỰ KIỆN ĐĂNG KÝ (MỚI) ---
         registerButton.Click += async (_, _) =>
         {
-            string user = userInput.Text.Trim();
-            string pass = passInput.Text.Trim();
+            var user = userInput.Text.Trim();
+            var pass = passInput.Text.Trim();
             if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
             {
-                MessageBox.Show("Vui lòng nhập Username và Password!", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Please enter username and password.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+
             await _socketService.SendAsync(GameMessageFactory.Register(user, pass));
         };
 
-        // --- SỰ KIỆN ĐĂNG NHẬP (MỚI) ---
         loginButton.Click += async (_, _) =>
         {
-            string user = userInput.Text.Trim();
-            string pass = passInput.Text.Trim();
+            var user = userInput.Text.Trim();
+            var pass = passInput.Text.Trim();
             if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
             {
-                MessageBox.Show("Vui lòng nhập Username và Password!", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Please enter username and password.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            _state.Username = user; // Tạm lưu Username vào State
+
+            _state.Username = user;
             await _socketService.SendAsync(GameMessageFactory.Login(user, pass));
         };
 
-        // --- SỰ KIỆN CHUYỂN TRANG ---
         openLobbyButton.Click += (_, _) =>
         {
             Hide();
@@ -167,5 +195,15 @@ public sealed class LoginForm : Form
         Controls.Add(loginButton);
         Controls.Add(registerButton);
         Controls.Add(openLobbyButton);
+    }
+
+    private void UpdateUiSafe(Action update)
+    {
+        if (!IsHandleCreated || IsDisposed)
+        {
+            return;
+        }
+
+        BeginInvoke(update);
     }
 }
