@@ -1,6 +1,7 @@
 using Client.Controls;
 using Client.Services;
 using Client.State;
+using Client.Utils; // THÊM DÒNG NÀY ĐỂ SỬ DỤNG APP_THEME
 using Shared.Models;
 using Shared.Enums;
 using System;
@@ -53,7 +54,9 @@ public sealed class GameForm : Form
         Width = 1160;
         Height = 830;
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Color.FromArgb(240, 244, 249);
+
+        // CẬP NHẬT: Sử dụng Dark theme cho Form thay vì mã màu nền sáng cũ
+        AppTheme.ApplyDarkForm(this);
 
         _borderlessForm = new SiticoneBorderlessForm()
         {
@@ -62,10 +65,11 @@ public sealed class GameForm : Form
         };
 
         var dragControl = new SiticoneDragControl { TargetControl = this };
-        var exitButton = new SiticoneControlBox { Anchor = AnchorStyles.Top | AnchorStyles.Right, FillColor = Color.Transparent, IconColor = Color.Gray, Left = 1110, Top = 0 };
+        var exitButton = new SiticoneControlBox { Anchor = AnchorStyles.Top | AnchorStyles.Right, FillColor = Color.Transparent, IconColor = AppTheme.SubText, Left = 1110, Top = 0 };
         Controls.Add(exitButton);
 
-        var canvasContainer = new SiticonePanel { Left = 20, Top = 40, Width = 800, Height = 600, BorderRadius = 10, FillColor = Color.White, BorderColor = Color.LightGray, BorderThickness = 1 };
+        // Giữ nguyên nền trắng cho vùng vẽ để các màu sắc vẽ hiển thị chính xác
+        var canvasContainer = new SiticonePanel { Left = 20, Top = 40, Width = 800, Height = 600, BorderRadius = 10, FillColor = Color.White, BorderColor = AppTheme.Border, BorderThickness = 1 };
         _canvas.Left = 0; _canvas.Top = 0; _canvas.Width = 800; _canvas.Height = 600;
         _canvas.BorderStyle = BorderStyle.None;
         canvasContainer.Controls.Add(_canvas);
@@ -77,68 +81,75 @@ public sealed class GameForm : Form
         _lblHint.Left = 25;
         _lblHint.Top = 750;
         _lblHint.AutoSize = true;
-        _lblHint.Font = new Font("Segoe UI", 18, FontStyle.Bold);
-        _lblHint.ForeColor = Color.FromArgb(94, 148, 255);
+        _lblHint.Font = new Font(AppTheme.TitleFont.FontFamily, 18, FontStyle.Bold);
+        _lblHint.ForeColor = AppTheme.Primary;
+        _lblHint.BackColor = Color.Transparent;
         Controls.Add(_lblHint);
 
         int rightX = 840;
         int rightWidth = 290;
 
-        // ==========================================
-        // FIX LỖI 1: CĂN GIỮA VÀ GIÃN CÁCH ĐỒNG HỒ
-        // ==========================================
         _lblTimer.Text = "⏳ 60";
-        _lblTimer.Font = new Font("Segoe UI", 24, FontStyle.Bold); // Giảm size font 1 chút
-        _lblTimer.AutoSize = false; // Tắt AutoSize để ép căn giữa
-        _lblTimer.Width = rightWidth; // Rộng bằng cái thanh Bar
+        _lblTimer.Font = new Font(AppTheme.TitleFont.FontFamily, 24, FontStyle.Bold);
+        _lblTimer.AutoSize = false;
+        _lblTimer.Width = rightWidth;
         _lblTimer.Height = 45;
-        _lblTimer.TextAlign = ContentAlignment.MiddleCenter; // Nằm ở giữa cực kỳ cân đối
+        _lblTimer.TextAlign = ContentAlignment.MiddleCenter;
         _lblTimer.Left = rightX;
-        _lblTimer.Top = 18; // Kéo lên cao cho thoáng
+        _lblTimer.Top = 18;
+        _lblTimer.ForeColor = AppTheme.Text;
+        _lblTimer.BackColor = Color.Transparent;
         Controls.Add(_lblTimer);
 
         _timerBar.Left = rightX;
-        _timerBar.Top = 70; // Đẩy thanh chạy xuống dưới 1 chút để tạo khoảng hở (padding)
+        _timerBar.Top = 70;
         _timerBar.Width = rightWidth;
         _timerBar.Height = 15;
         _timerBar.BorderRadius = 7;
         _timerBar.Maximum = 60;
         _timerBar.Value = 60;
-        _timerBar.ProgressColor = Color.FromArgb(46, 204, 113);
-        _timerBar.ProgressColor2 = Color.FromArgb(46, 204, 113);
+        _timerBar.FillColor = AppTheme.Border;
+        _timerBar.ProgressColor = AppTheme.Success;
+        _timerBar.ProgressColor2 = AppTheme.Success;
         Controls.Add(_timerBar);
 
         _btnReady.Text = "SẴN SÀNG";
-        _btnReady.Font = new Font("Segoe UI", 14, FontStyle.Bold);
-        _btnReady.BorderRadius = 8;
-        _btnReady.FillColor = Color.FromArgb(46, 204, 113);
-        _btnReady.ForeColor = Color.White;
-        _btnReady.Left = rightX;
-        _btnReady.Top = 105;
         _btnReady.Width = rightWidth;
         _btnReady.Height = 50;
+        _btnReady.Left = rightX;
+        _btnReady.Top = 105;
         _btnReady.Cursor = Cursors.Hand;
+        AppTheme.StyleSuccessButton(_btnReady);
+        _btnReady.Font = new Font(AppTheme.HeaderFont.FontFamily, 14, FontStyle.Bold);
         Controls.Add(_btnReady);
 
-        Label lblScore = new Label { Text = "🏆 Bảng điểm", Left = rightX, Top = 175, Font = new Font("Segoe UI", 11, FontStyle.Bold), AutoSize = true };
+        Label lblScore = new Label { Text = "🏆 Bảng điểm", Left = rightX, Top = 175, Font = AppTheme.HeaderFont, ForeColor = AppTheme.Text, AutoSize = true, BackColor = Color.Transparent };
         Controls.Add(lblScore);
 
-        var scorePanel = new SiticonePanel { Left = rightX, Top = 205, Width = rightWidth, Height = 170, BorderRadius = 10, FillColor = Color.White, BorderColor = Color.LightGray, BorderThickness = 1 };
+        var scorePanel = new SiticonePanel { Left = rightX, Top = 205, Width = rightWidth, Height = 170 };
+        AppTheme.StylePanel(scorePanel);
+
         _scoreboard.Left = 5; _scoreboard.Top = 5; _scoreboard.Width = rightWidth - 10; _scoreboard.Height = 160;
         _scoreboard.View = View.Details; _scoreboard.FullRowSelect = true; _scoreboard.GridLines = true;
         _scoreboard.BorderStyle = BorderStyle.None;
-        _scoreboard.Font = new Font("Segoe UI", 10);
+        _scoreboard.Font = AppTheme.NormalFont;
+        _scoreboard.BackColor = AppTheme.PanelBg;
+        _scoreboard.ForeColor = AppTheme.Text;
         _scoreboard.Columns.Add("Người chơi", 190); _scoreboard.Columns.Add("Điểm", 80);
         scorePanel.Controls.Add(_scoreboard);
         Controls.Add(scorePanel);
 
-        Label lblChat = new Label { Text = "💬 Khung Chat", Left = rightX, Top = 385, Font = new Font("Segoe UI", 11, FontStyle.Bold), AutoSize = true };
+        Label lblChat = new Label { Text = "💬 Khung Chat", Left = rightX, Top = 385, Font = AppTheme.HeaderFont, ForeColor = AppTheme.Text, AutoSize = true, BackColor = Color.Transparent };
         Controls.Add(lblChat);
 
-        var chatPanel = new SiticonePanel { Left = rightX, Top = 415, Width = rightWidth, Height = 250, BorderRadius = 10, FillColor = Color.White, BorderColor = Color.LightGray, BorderThickness = 1 };
+        var chatPanel = new SiticonePanel { Left = rightX, Top = 415, Width = rightWidth, Height = 250 };
+        AppTheme.StylePanel(chatPanel);
+
         _chatBox.Left = 5; _chatBox.Top = 5; _chatBox.Width = rightWidth - 10; _chatBox.Height = 240;
-        _chatBox.ReadOnly = true; _chatBox.BackColor = Color.White; _chatBox.BorderStyle = BorderStyle.None;
-        _chatBox.Font = new Font("Segoe UI", 10);
+        _chatBox.ReadOnly = true; _chatBox.BorderStyle = BorderStyle.None;
+        _chatBox.Font = AppTheme.NormalFont;
+        _chatBox.BackColor = AppTheme.PanelBg;
+        _chatBox.ForeColor = AppTheme.Text;
         chatPanel.Controls.Add(_chatBox);
         Controls.Add(chatPanel);
 
@@ -146,9 +157,9 @@ public sealed class GameForm : Form
         _txtGuess.Top = 680;
         _txtGuess.Width = 205;
         _txtGuess.Height = 45;
-        _txtGuess.BorderRadius = 8;
-        _txtGuess.Font = new Font("Segoe UI", 11);
+        _txtGuess.Font = AppTheme.NormalFont;
         _txtGuess.PlaceholderText = "Đoán chữ tại đây...";
+        AppTheme.StyleTextBox(_txtGuess);
         Controls.Add(_txtGuess);
 
         _btnSend.Text = "Gửi";
@@ -156,10 +167,9 @@ public sealed class GameForm : Form
         _btnSend.Top = 680;
         _btnSend.Width = 75;
         _btnSend.Height = 45;
-        _btnSend.BorderRadius = 8;
-        _btnSend.FillColor = Color.FromArgb(94, 148, 255);
-        _btnSend.Font = new Font("Segoe UI", 11, FontStyle.Bold);
         _btnSend.Cursor = Cursors.Hand;
+        AppTheme.StylePrimaryButton(_btnSend);
+        _btnSend.Font = AppTheme.HeaderFont;
         Controls.Add(_btnSend);
 
         _countdownTimer.Interval = 1000;
@@ -168,61 +178,58 @@ public sealed class GameForm : Form
 
     private void SetupToolbar()
     {
-        toolbarPanel = new SiticonePanel { Left = 20, Top = 650, Width = 800, Height = 85, FillColor = Color.White, BorderRadius = 10, BorderColor = Color.LightGray, BorderThickness = 1 };
+        toolbarPanel = new SiticonePanel { Left = 20, Top = 650, Width = 800, Height = 85 };
+        AppTheme.StylePanel(toolbarPanel);
         Controls.Add(toolbarPanel);
 
         int currentX = 15;
-        toolbarPanel.Controls.Add(new Label { Text = "Công cụ", Left = currentX, Top = 8, AutoSize = true, Font = new Font("Segoe UI", 8, FontStyle.Italic), BackColor = Color.White });
+        toolbarPanel.Controls.Add(new Label { Text = "Công cụ", Left = currentX, Top = 8, AutoSize = true, Font = new Font(AppTheme.NormalFont.FontFamily, 8, FontStyle.Italic), ForeColor = AppTheme.SubText, BackColor = Color.Transparent });
 
-        SiticoneButton btnPen = new SiticoneButton { Text = "✏️", Left = currentX, Top = 30, Width = 45, Height = 40, BorderRadius = 5, FillColor = Color.FromArgb(240, 240, 240), ForeColor = Color.Black, Cursor = Cursors.Hand };
+        SiticoneButton btnPen = new SiticoneButton { Text = "✏️", Left = currentX, Top = 30, Width = 45, Height = 40, BorderRadius = 5, FillColor = AppTheme.Border, ForeColor = AppTheme.Text, Cursor = Cursors.Hand };
         btnPen.Click += (s, e) => { _canvas.CurrentTool = DrawTool.Pen; _canvas.IsEraser = false; };
         toolbarPanel.Controls.Add(btnPen); currentX += 50;
 
-        SiticoneButton btnEraser = new SiticoneButton { Text = "🧼", Left = currentX, Top = 30, Width = 45, Height = 40, BorderRadius = 5, FillColor = Color.FromArgb(240, 240, 240), ForeColor = Color.Black, Cursor = Cursors.Hand };
+        SiticoneButton btnEraser = new SiticoneButton { Text = "🧼", Left = currentX, Top = 30, Width = 45, Height = 40, BorderRadius = 5, FillColor = AppTheme.Border, ForeColor = AppTheme.Text, Cursor = Cursors.Hand };
         btnEraser.Click += (s, e) => { _canvas.CurrentTool = DrawTool.Pen; _canvas.IsEraser = true; };
         toolbarPanel.Controls.Add(btnEraser); currentX += 50;
 
-        SiticoneButton btnClear = new SiticoneButton { Text = "🗑️", Left = currentX, Top = 30, Width = 45, Height = 40, BorderRadius = 5, FillColor = Color.MistyRose, ForeColor = Color.Black, Cursor = Cursors.Hand };
+        SiticoneButton btnClear = new SiticoneButton { Text = "🗑️", Left = currentX, Top = 30, Width = 45, Height = 40, BorderRadius = 5, FillColor = AppTheme.Danger, ForeColor = Color.White, Cursor = Cursors.Hand };
         btnClear.Click += (s, e) => { if (MessageBox.Show("Xóa sạch bảng vẽ?", "Xác nhận", MessageBoxButtons.YesNo) == DialogResult.Yes) _canvas.ClearCanvas(); };
         toolbarPanel.Controls.Add(btnClear); currentX += 65;
 
-        toolbarPanel.Controls.Add(new Label { Width = 2, Height = 60, Left = currentX, Top = 12, BackColor = Color.Gainsboro }); currentX += 15;
+        toolbarPanel.Controls.Add(new Label { Width = 2, Height = 60, Left = currentX, Top = 12, BackColor = AppTheme.Border }); currentX += 15;
 
-        toolbarPanel.Controls.Add(new Label { Text = "Hình khối", Left = currentX, Top = 8, AutoSize = true, Font = new Font("Segoe UI", 8, FontStyle.Italic), BackColor = Color.White });
+        toolbarPanel.Controls.Add(new Label { Text = "Hình khối", Left = currentX, Top = 8, AutoSize = true, Font = new Font(AppTheme.NormalFont.FontFamily, 8, FontStyle.Italic), ForeColor = AppTheme.SubText, BackColor = Color.Transparent });
         string[] shapes = { "➖", "⬜", "⭕", "🔺" };
         DrawTool[] tools = { DrawTool.Line, DrawTool.Rectangle, DrawTool.Ellipse, DrawTool.Triangle };
         for (int i = 0; i < shapes.Length; i++)
         {
-            var btn = new SiticoneButton { Text = shapes[i], Left = currentX, Top = 30, Width = 40, Height = 40, BorderRadius = 5, FillColor = Color.FromArgb(240, 240, 240), ForeColor = Color.Black, Cursor = Cursors.Hand };
+            var btn = new SiticoneButton { Text = shapes[i], Left = currentX, Top = 30, Width = 40, Height = 40, BorderRadius = 5, FillColor = AppTheme.Border, ForeColor = AppTheme.Text, Cursor = Cursors.Hand };
             int index = i;
             btn.Click += (s, e) => { _canvas.CurrentTool = tools[index]; _canvas.IsEraser = false; };
             toolbarPanel.Controls.Add(btn); currentX += 45;
         }
 
         currentX += 10;
-        toolbarPanel.Controls.Add(new Label { Width = 2, Height = 60, Left = currentX, Top = 12, BackColor = Color.Gainsboro }); currentX += 15;
+        toolbarPanel.Controls.Add(new Label { Width = 2, Height = 60, Left = currentX, Top = 12, BackColor = AppTheme.Border }); currentX += 15;
 
-        // ==========================================
-        // FIX LỖI 2: VẼ VÒNG TRÒN CỠ CỌ XỊN XÒ
-        // ==========================================
-        toolbarPanel.Controls.Add(new Label { Text = "Cỡ cọ", Left = currentX, Top = 8, AutoSize = true, Font = new Font("Segoe UI", 8, FontStyle.Italic), BackColor = Color.White });
+        toolbarPanel.Controls.Add(new Label { Text = "Cỡ cọ", Left = currentX, Top = 8, AutoSize = true, Font = new Font(AppTheme.NormalFont.FontFamily, 8, FontStyle.Italic), ForeColor = AppTheme.SubText, BackColor = Color.Transparent });
 
-        int[] actualSizes = { 2, 6, 14 };       // Size thật sự xuất ra màn hình vẽ
-        int[] visualSizes = { 6, 12, 20 };      // Đường kính hình tròn hiển thị trên nút (để user dễ nhìn)
+        int[] actualSizes = { 2, 6, 14 };
+        int[] visualSizes = { 6, 12, 20 };
 
         for (int i = 0; i < actualSizes.Length; i++)
         {
-            var btnSize = new SiticoneButton { Text = "", Left = currentX, Top = 30, Width = 45, Height = 40, BorderRadius = 5, FillColor = Color.FromArgb(240, 240, 240), Cursor = Cursors.Hand };
+            var btnSize = new SiticoneButton { Text = "", Left = currentX, Top = 30, Width = 45, Height = 40, BorderRadius = 5, FillColor = AppTheme.Border, Cursor = Cursors.Hand };
 
             int realSize = actualSizes[i];
             int vSize = visualSizes[i];
 
-            // Ma thuật GDI+: Tự động vẽ một hình tròn xám đen lên chính giữa nút
             btnSize.Paint += (sender, e) => {
-                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias; // Khử răng cưa cho viền tròn mượt
-                using var brush = new SolidBrush(Color.FromArgb(60, 60, 60)); // Màu cọ xám đen
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                // CẬP NHẬT: Hình tròn đại diện kích thước đổi từ xám tối sang màu chữ sáng hệ thống để nổi bật trên nền Dark
+                using var brush = new SolidBrush(AppTheme.Text);
 
-                // Toán học căn giữa: (Rộng_Nút - Rộng_VòngTròn)/2
                 int xPos = (btnSize.Width - vSize) / 2;
                 int yPos = (btnSize.Height - vSize) / 2;
                 e.Graphics.FillEllipse(brush, xPos, yPos, vSize, vSize);
@@ -233,15 +240,15 @@ public sealed class GameForm : Form
         }
 
         currentX += 10;
-        toolbarPanel.Controls.Add(new Label { Width = 2, Height = 60, Left = currentX, Top = 12, BackColor = Color.Gainsboro }); currentX += 15;
+        toolbarPanel.Controls.Add(new Label { Width = 2, Height = 60, Left = currentX, Top = 12, BackColor = AppTheme.Border }); currentX += 15;
 
-        toolbarPanel.Controls.Add(new Label { Text = "Màu sắc", Left = currentX, Top = 8, AutoSize = true, Font = new Font("Segoe UI", 8, FontStyle.Italic), BackColor = Color.White });
+        toolbarPanel.Controls.Add(new Label { Text = "Màu sắc", Left = currentX, Top = 8, AutoSize = true, Font = new Font(AppTheme.NormalFont.FontFamily, 8, FontStyle.Italic), ForeColor = AppTheme.SubText, BackColor = Color.Transparent });
         string[] colors = { "#000000", "#FF0000", "#0000FF", "#008000", "#FFFF00", "#FFA500", "#FFFFFF", "#7F7F7F", "#880015", "#ED1C24" };
         int colorX = currentX; int colorY = 25;
         for (int i = 0; i < colors.Length; i++)
         {
             var btnColor = new SiticoneButton { FillColor = ColorTranslator.FromHtml(colors[i]), Left = colorX, Top = colorY, Width = 24, Height = 24, BorderRadius = 12, Cursor = Cursors.Hand };
-            if (colors[i] == "#FFFFFF") btnColor.BorderThickness = 1;
+            if (colors[i] == "#FFFFFF") { btnColor.BorderThickness = 1; btnColor.BorderColor = AppTheme.Border; }
             string hex = colors[i];
             btnColor.Click += (s, e) => { _canvas.CurrentColor = hex; _canvas.CurrentTool = DrawTool.Pen; _canvas.IsEraser = false; };
             toolbarPanel.Controls.Add(btnColor);
@@ -267,10 +274,10 @@ public sealed class GameForm : Form
         _btnSend.Click += BtnSend_Click;
         _txtGuess.KeyDown += TxtGuess_KeyDown;
 
-        _dispatcher.SystemMessageReceived += msg => AppendChat("🔔 [Hệ thống] " + msg, Color.Blue);
+        _dispatcher.SystemMessageReceived += msg => AppendChat("🔔 [Hệ thống] " + msg, AppTheme.Primary);
         _dispatcher.CorrectGuessReceived += (playerName, scoreAwarded) => {
             var scoreText = scoreAwarded > 0 ? $" (+{scoreAwarded} điểm)" : string.Empty;
-            AppendChat($"✅ {playerName} đã đoán đúng!{scoreText}", Color.ForestGreen);
+            AppendChat($"✅ {playerName} đã đoán đúng!{scoreText}", AppTheme.Success);
         };
     }
 
@@ -299,7 +306,7 @@ public sealed class GameForm : Form
         if (_state.IsDrawer && _state.CurrentGameState == GameState.Drawing)
         {
             _lblHint.Text = "💡 Bạn đang vẽ! Hãy vẽ thật đẹp để mọi người cùng đoán nhé.";
-            _lblHint.ForeColor = Color.ForestGreen;
+            _lblHint.ForeColor = AppTheme.Success;
         }
         else if (_state.CurrentGameState != GameState.Drawing)
         {
@@ -324,7 +331,6 @@ public sealed class GameForm : Form
     {
         int displaySeconds = Math.Max(0, seconds);
 
-        // Đã áp dụng căn giữa nên không cần thụt lề bằng space nữa
         _lblTimer.Text = $"⏳ {displaySeconds}";
 
         if (displaySeconds <= _timerBar.Maximum)
@@ -334,21 +340,22 @@ public sealed class GameForm : Form
 
         if (displaySeconds <= 10)
         {
-            _lblTimer.ForeColor = Color.Red;
-            _timerBar.ProgressColor = Color.Red;
-            _timerBar.ProgressColor2 = Color.Red;
+            _lblTimer.ForeColor = AppTheme.Danger;
+            _timerBar.ProgressColor = AppTheme.Danger;
+            _timerBar.ProgressColor2 = AppTheme.Danger;
         }
         else if (displaySeconds <= 20)
         {
-            _lblTimer.ForeColor = Color.DarkOrange;
-            _timerBar.ProgressColor = Color.DarkOrange;
-            _timerBar.ProgressColor2 = Color.DarkOrange;
+            Color orange = Color.DarkOrange;
+            _lblTimer.ForeColor = orange;
+            _timerBar.ProgressColor = orange;
+            _timerBar.ProgressColor2 = orange;
         }
         else
         {
-            _lblTimer.ForeColor = Color.Black;
-            _timerBar.ProgressColor = Color.FromArgb(46, 204, 113);
-            _timerBar.ProgressColor2 = Color.FromArgb(46, 204, 113);
+            _lblTimer.ForeColor = AppTheme.Text;
+            _timerBar.ProgressColor = AppTheme.Success;
+            _timerBar.ProgressColor2 = AppTheme.Success;
         }
     }
 
@@ -383,7 +390,7 @@ public sealed class GameForm : Form
             int letterCount = rawHint.Length;
             string spacedHint = string.Join(" ", rawHint.ToCharArray());
             _lblHint.Text = $"💡 Gợi ý: {spacedHint} ({letterCount} chữ cái)";
-            _lblHint.ForeColor = Color.FromArgb(94, 148, 255);
+            _lblHint.ForeColor = AppTheme.Primary;
         }
     }
 
@@ -423,13 +430,14 @@ public sealed class GameForm : Form
         await _socketService.SendAsync(GameMessageFactory.Ready(_state.RoomCode!, _state.SessionId!));
         _btnReady.Enabled = false;
         _btnReady.Text = "ĐANG CHỜ MỌI NGƯỜI...";
-        _btnReady.FillColor = Color.Gray;
+        _btnReady.FillColor = AppTheme.Border;
+        _btnReady.ForeColor = AppTheme.SubText;
     }
 
     private async void BtnSend_Click(object? sender, EventArgs e)
     {
         if (string.IsNullOrWhiteSpace(_txtGuess.Text)) return;
-        AppendChat($"[{_state.Username}]: {_txtGuess.Text}", Color.Black);
+        AppendChat($"[{_state.Username}]: {_txtGuess.Text}", AppTheme.Text);
         if (!EnsureGameplayContext()) return;
         await _socketService.SendAsync(GameMessageFactory.Guess(_state.RoomCode!, _txtGuess.Text.Trim(), _state.SessionId!));
         _txtGuess.Clear();
@@ -460,10 +468,12 @@ public sealed class GameForm : Form
 
             if (p.IsDrawer)
             {
-                item.BackColor = Color.LightGoldenrodYellow;
+                // CẬP NHẬT: Đổi màu nền highlight của Họa sĩ hiện tại sang tông vàng tối để hợp chuẩn DarkTheme
+                item.BackColor = Color.FromArgb(65, 55, 30);
+                item.ForeColor = AppTheme.Text;
                 item.Font = new Font(_scoreboard.Font, FontStyle.Bold);
             }
-            if (!p.IsConnected) item.ForeColor = Color.Gray;
+            if (!p.IsConnected) item.ForeColor = AppTheme.SubText;
             _scoreboard.Items.Add(item);
         }
         _scoreboard.EndUpdate();
@@ -504,7 +514,7 @@ public sealed class GameForm : Form
             result.ShowDialog(this);
             _btnReady.Enabled = true;
             _btnReady.Text = "SẴN SÀNG";
-            _btnReady.FillColor = Color.FromArgb(46, 204, 113);
+            AppTheme.StyleSuccessButton(_btnReady);
         }
     }
 
@@ -528,7 +538,7 @@ public sealed class GameForm : Form
     private bool EnsureGameplayContext()
     {
         if (!string.IsNullOrWhiteSpace(_state.RoomCode) && !string.IsNullOrWhiteSpace(_state.SessionId)) return true;
-        AppendChat("🔔 [Lỗi] Thiếu thông tin phòng, vui lòng kết nối lại.", Color.Firebrick);
+        AppendChat("🔔 [Lỗi] Thiếu thông tin phòng, vui lòng kết nối lại.", AppTheme.Danger);
         return false;
     }
 }
