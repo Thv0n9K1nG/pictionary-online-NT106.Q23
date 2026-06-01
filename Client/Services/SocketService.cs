@@ -8,9 +8,11 @@ namespace Client.Services;
 
 public sealed class SocketService
 {
+    private readonly SemaphoreSlim _connectLock = new(1, 1);
     private Stream? _stream;
     private StreamReader? _reader;
     private CancellationTokenSource? _receiveCts;
+    private int _connectionVersion;
 
     public event EventHandler<GameMessage>? MessageReceived;
     public event EventHandler<string>? ReceiveError;
@@ -18,16 +20,34 @@ public sealed class SocketService
 
     public bool IsConnected => _stream is not null;
 
+    public void Disconnect()
+    {
+        CloseCurrentConnection();
+    }
+
     public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken = default)
     {
-        _receiveCts?.Cancel();
+        await _connectLock.WaitAsync(cancellationToken);
+        try
+        {
+            CloseCurrentConnection();
 
-        var factory = new Client.Security.TlsClientFactory();
-        _stream = await factory.ConnectAsync(host, port, cancellationToken);
-        _reader = new StreamReader(_stream, Encoding.UTF8);
-        _receiveCts = new CancellationTokenSource();
+            var factory = new Client.Security.TlsClientFactory();
+            var stream = await factory.ConnectAsync(host, port, cancellationToken);
+            var reader = new StreamReader(stream, Encoding.UTF8);
+            var receiveCts = new CancellationTokenSource();
+            var version = Interlocked.Increment(ref _connectionVersion);
 
-        _ = Task.Run(() => ReceiveLoopAsync(_receiveCts.Token));
+            _stream = stream;
+            _reader = reader;
+            _receiveCts = receiveCts;
+
+            _ = Task.Run(() => ReceiveLoopAsync(stream, reader, version, receiveCts.Token));
+        }
+        finally
+        {
+            _connectLock.Release();
+        }
     }
 
     public async Task SendAsync(GameMessage message, CancellationToken cancellationToken = default)
@@ -42,18 +62,13 @@ public sealed class SocketService
         await _stream.FlushAsync(cancellationToken);
     }
 
-    private async Task ReceiveLoopAsync(CancellationToken token)
+    private async Task ReceiveLoopAsync(Stream stream, StreamReader reader, int version, CancellationToken token)
     {
-        if (_reader is null)
-        {
-            return;
-        }
-
         try
         {
             while (!token.IsCancellationRequested)
             {
-                var line = await _reader.ReadLineAsync(token);
+                var line = await reader.ReadLineAsync(token);
                 if (line is null)
                 {
                     break;
@@ -88,9 +103,18 @@ public sealed class SocketService
         }
         finally
         {
-            _stream?.Close();
-            _stream = null;
-            ConnectionClosed?.Invoke(this, EventArgs.Empty);
+            var isCurrentConnection = version == Volatile.Read(ref _connectionVersion) &&
+                ReferenceEquals(stream, _stream);
+
+            stream.Close();
+
+            if (isCurrentConnection)
+            {
+                _stream = null;
+                _reader = null;
+                _receiveCts = null;
+                ConnectionClosed?.Invoke(this, EventArgs.Empty);
+            }
         }
     }
 
@@ -221,5 +245,17 @@ public sealed class SocketService
             .Select(char.ToLowerInvariant)
             .ToArray();
         return new string(chars);
+    }
+
+    private void CloseCurrentConnection()
+    {
+        var cts = _receiveCts;
+        _receiveCts = null;
+        cts?.Cancel();
+        cts?.Dispose();
+
+        _reader = null;
+        _stream?.Close();
+        _stream = null;
     }
 }

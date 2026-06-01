@@ -1,10 +1,7 @@
 using Client.Services;
 using Client.State;
-using Client.Utils; // THÊM DÒNG NÀY ĐỂ SỬ DỤNG APP_THEME
+using Client.Utils;
 using Shared.Enums;
-using System;
-using System.Drawing;
-using System.Windows.Forms;
 using Siticone.Desktop.UI.WinForms;
 
 namespace Client.UI;
@@ -14,65 +11,49 @@ public sealed class LoginForm : Form
     private readonly ClientState _state = new();
     private readonly SocketService _socketService = new();
     private readonly MessageDispatcher _dispatcher;
-
-    // Control tạo viền bo góc và làm mất thanh tiêu đề mặc định của WinForms
+    private readonly ReconnectService _reconnectService;
     private readonly SiticoneBorderlessForm _borderlessForm;
+    private GatewayConnectionForm? _connectionForm;
+    private bool _lobbyOpened;
 
     public LoginForm()
     {
         _dispatcher = new MessageDispatcher(_state);
+        _reconnectService = new ReconnectService(_socketService);
 
         Text = "Pictionary Online - Login";
         Width = 460;
         Height = 420;
         StartPosition = FormStartPosition.CenterScreen;
 
-        // CẬP NHẬT: Sử dụng Dark theme cho Form
         AppTheme.ApplyDarkForm(this);
 
-        // Khởi tạo Form bo góc (Đã sửa lỗi ContainerControl)
-        _borderlessForm = new SiticoneBorderlessForm()
+        _borderlessForm = new SiticoneBorderlessForm
         {
             ContainerControl = this,
             BorderRadius = 15
         };
 
-        // Kéo thả Form bằng thanh tiêu đề giả
-        var dragControl = new SiticoneDragControl { TargetControl = this };
+        _ = new SiticoneDragControl { TargetControl = this };
 
-        // Nút tắt Form ở góc trên cùng bên phải
-        var exitButton = new SiticoneControlBox { Anchor = AnchorStyles.Top | AnchorStyles.Right, FillColor = Color.Transparent, IconColor = AppTheme.SubText, Left = 410, Top = 0 };
+        var exitButton = new SiticoneControlBox
+        {
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            FillColor = Color.Transparent,
+            IconColor = AppTheme.SubText,
+            Left = 410,
+            Top = 0
+        };
 
         var title = new Label
         {
             Text = "Pictionary Online",
             AutoSize = true,
             Font = AppTheme.TitleFont,
-            ForeColor = AppTheme.Primary, // Màu tím chủ đạo của hệ thống
+            ForeColor = AppTheme.Primary,
             Left = 30,
             Top = 20
         };
-
-        var info = new Label
-        {
-            Text = "Baseline client: connect to Gateway only.",
-            AutoSize = true,
-            Font = AppTheme.NormalFont,
-            ForeColor = AppTheme.SubText,
-            Left = 30,
-            Top = 60
-        };
-
-        // --- CÁC TRƯỜNG NHẬP LIỆU ---
-        var ipLabel = new Label { Text = "Gateway IP:", Left = 30, Top = 103, AutoSize = true };
-        AppTheme.StyleLabel(ipLabel);
-        var ipInput = new SiticoneTextBox { Text = "127.0.0.1", Left = 140, Top = 95, Width = 150, Height = 36 };
-        AppTheme.StyleTextBox(ipInput);
-
-        var portLabel = new Label { Text = "Port:", Left = 30, Top = 148, AutoSize = true };
-        AppTheme.StyleLabel(portLabel);
-        var portInput = new SiticoneTextBox { Text = "5000", Left = 140, Top = 140, Width = 80, Height = 36 };
-        AppTheme.StyleTextBox(portInput);
 
         var userLabel = new Label { Text = "Username:", Left = 30, Top = 193, AutoSize = true };
         AppTheme.StyleLabel(userLabel);
@@ -82,7 +63,7 @@ public sealed class LoginForm : Form
             Top = 185,
             Width = 200,
             Height = 36,
-            PlaceholderText = "Nhập tài khoản..."
+            PlaceholderText = "Username..."
         };
         AppTheme.StyleTextBox(userInput);
 
@@ -95,25 +76,9 @@ public sealed class LoginForm : Form
             Width = 200,
             Height = 36,
             UseSystemPasswordChar = true,
-            PlaceholderText = "Nhập mật khẩu..."
+            PlaceholderText = "Password..."
         };
         AppTheme.StyleTextBox(passInput);
-
-        var statusLabel = new Label { Text = "Chưa kết nối.", Left = 30, Top = 285, AutoSize = true };
-        AppTheme.StyleLabel(statusLabel);
-        statusLabel.ForeColor = AppTheme.SubText;
-
-        // --- CÁC NÚT TƯƠNG TÁC ---
-        var connectButton = new SiticoneButton
-        {
-            Text = "Connect",
-            Left = 30,
-            Top = 320,
-            Width = 105,
-            Height = 40,
-            Cursor = Cursors.Hand
-        };
-        AppTheme.StylePrimaryButton(connectButton);
 
         var loginButton = new SiticoneButton
         {
@@ -137,38 +102,73 @@ public sealed class LoginForm : Form
             Enabled = false,
             Cursor = Cursors.Hand
         };
-        // Style thủ công theo chuẩn Warning của Theme (Do AppTheme chưa viết sẵn StyleWarningButton)
         registerButton.FillColor = AppTheme.Warning;
         registerButton.ForeColor = AppTheme.Text;
         registerButton.BorderRadius = 8;
         registerButton.Font = AppTheme.HeaderFont;
 
-        // --- XỬ LÝ LỖI MẤT KẾT NỐI TỪ CODE GỐC CỦA NHÓM ---
-        _socketService.ReceiveError += (_, error) =>
+        _state.ConnectionStateChanged += connectionState =>
         {
             UpdateUiSafe(() =>
             {
-                statusLabel.Text = error;
-                statusLabel.ForeColor = AppTheme.Danger; // Đổi sang màu Danger thống nhất
-            });
-        };
+                var connected = connectionState == ClientConnectionState.Connected && _socketService.IsConnected;
+                loginButton.Enabled = connected;
+                registerButton.Enabled = connected;
 
-        _socketService.ConnectionClosed += (_, _) =>
-        {
-            UpdateUiSafe(() =>
-            {
-                if (string.IsNullOrWhiteSpace(_state.SessionId))
+                if (connected)
                 {
-                    connectButton.Enabled = true;
-                    loginButton.Enabled = false;
-                    registerButton.Enabled = false;
-                    statusLabel.Text = "Disconnected from Gateway.";
-                    statusLabel.ForeColor = AppTheme.Danger; // Đổi sang màu Danger thống nhất
+                    CloseConnectionForm();
+                    Show();
+                }
+                else if (!_lobbyOpened)
+                {
+                    Hide();
+                    ShowConnectionForm();
+
+                    if (connectionState == ClientConnectionState.Disconnected)
+                    {
+                        _connectionForm?.SetStatus("Disconnected from Gateway. Reconnecting...", AppTheme.Warning);
+                    }
                 }
             });
         };
 
-        // --- XỬ LÝ TIN NHẮN SOCKET TỪ SERVER ---
+        _reconnectService.ConnectionStatusChanged += status =>
+        {
+            UpdateUiSafe(() =>
+            {
+                if (_state.ConnectionState == ClientConnectionState.Connected)
+                {
+                    CloseConnectionForm();
+                    Show();
+                    return;
+                }
+
+                ShowConnectionForm();
+                _connectionForm?.SetStatus(status, AppTheme.Primary);
+            });
+        };
+
+        _reconnectService.ConnectionRetryScheduled += (delay, _) =>
+        {
+            UpdateUiSafe(() =>
+            {
+                ShowConnectionForm();
+                _connectionForm?.SetStatus($"Gateway unavailable, retrying in {(int)delay.TotalSeconds}s...", AppTheme.Warning);
+                loginButton.Enabled = false;
+                registerButton.Enabled = false;
+            });
+        };
+
+        _socketService.ReceiveError += (_, error) =>
+        {
+            UpdateUiSafe(() =>
+            {
+                ShowConnectionForm();
+                _connectionForm?.SetStatus(error, AppTheme.Danger);
+            });
+        };
+
         _socketService.MessageReceived += (_, message) =>
         {
             UpdateUiSafe(() =>
@@ -178,86 +178,42 @@ public sealed class LoginForm : Form
                 switch (message.Type)
                 {
                     case MessageType.LoginSuccess when !string.IsNullOrWhiteSpace(_state.SessionId):
-                        statusLabel.Text = $"Xin chào, {_state.Username ?? userInput.Text}!";
-                        statusLabel.ForeColor = AppTheme.Success;
-
-                        // 1. Ẩn LoginForm đi
-                        Hide();
-
-                        // 2. Gọi màn hình chào Logo chạy loading (Dùng ShowDialog để ép đợi chạy xong)
-                        using (var splashForm = new SplashForm())
-                        {
-                            splashForm.ShowDialog();
-                        }
-
-                        // 3. Sau khi SplashForm đóng, tự động mở và chuyển sang LobbyForm
-                        var lobbyForm = new LobbyForm(_state, _socketService);
-                        lobbyForm.FormClosed += (s, args) => Show();
-                        lobbyForm.Show();
+                        OpenLobbyOnce();
                         break;
 
                     case MessageType.LoginSuccess:
-                        statusLabel.Text = "Lỗi: Không nhận được SessionId từ Server.";
-                        statusLabel.ForeColor = AppTheme.Danger;
+                        MessageBox.Show("Login response did not include a sessionId.", "Login failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         break;
 
                     case MessageType.LoginFailed:
-                    case MessageType.RegisterFailed:
-                    case MessageType.Error:
-                        statusLabel.Text = _state.LastErrorMessage ?? "Yêu cầu thất bại.";
-                        statusLabel.ForeColor = AppTheme.Danger;
+                        MessageBox.Show("Sai tai khoan hoac mat khau. Vui long thu lai.", "Login failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        break;
 
-                        if (message.Type == MessageType.LoginFailed)
-                            MessageBox.Show("Sai tài khoản hoặc mật khẩu! Vui lòng thử lại.", "Lỗi Đăng Nhập", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        else if (message.Type == MessageType.RegisterFailed)
-                            MessageBox.Show("Tên tài khoản này đã bị trùng!", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    case MessageType.RegisterFailed:
+                        MessageBox.Show("Ten tai khoan nay da bi trung.", "Register failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        break;
+
+                    case MessageType.Error:
+                        MessageBox.Show(_state.LastErrorMessage ?? "Request failed.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         break;
 
                     case MessageType.RegisterSuccess:
-                        statusLabel.Text = "Đăng ký thành công!";
-                        statusLabel.ForeColor = AppTheme.Success;
-                        MessageBox.Show("Tạo tài khoản thành công! Bây giờ bạn có thể nhấn Login.", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show("Tao tai khoan thanh cong. Ban co the nhan Login.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         break;
                 }
             });
-        };
-
-        // --- CÁC SỰ KIỆN CLICK NÚT BẤM ---
-        connectButton.Click += async (_, _) =>
-        {
-            var host = ipInput.Text.Trim();
-            if (!int.TryParse(portInput.Text.Trim(), out var port))
-            {
-                statusLabel.Text = "Invalid port.";
-                statusLabel.ForeColor = AppTheme.Danger;
-                return;
-            }
-
-            statusLabel.Text = "Connecting...";
-            statusLabel.ForeColor = AppTheme.Primary;
-            connectButton.Enabled = false;
-
-            try
-            {
-                await _socketService.ConnectAsync(host, port);
-                statusLabel.Text = "Connected to Gateway.";
-                statusLabel.ForeColor = AppTheme.Success;
-                loginButton.Enabled = true;
-                registerButton.Enabled = true;
-            }
-            catch (Exception ex)
-            {
-                statusLabel.Text = $"Connection failed: {ex.Message}";
-                statusLabel.ForeColor = AppTheme.Danger;
-                connectButton.Enabled = true;
-            }
         };
 
         registerButton.Click += async (_, _) =>
         {
             var user = userInput.Text.Trim();
             var pass = passInput.Text.Trim();
-            if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass)) { MessageBox.Show("Vui lòng nhập Username và Password!", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
+            {
+                MessageBox.Show("Vui long nhap Username va Password.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             await _socketService.SendAsync(GameMessageFactory.Register(user, pass));
         };
 
@@ -265,33 +221,106 @@ public sealed class LoginForm : Form
         {
             var user = userInput.Text.Trim();
             var pass = passInput.Text.Trim();
-            if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass)) { MessageBox.Show("Vui lòng nhập Username và Password!", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
+            {
+                MessageBox.Show("Vui long nhap Username va Password.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             _state.Username = user;
             await _socketService.SendAsync(GameMessageFactory.Login(user, pass));
         };
 
-        // Add control vào Form
+        Shown += (_, _) =>
+        {
+            Hide();
+            ShowConnectionForm();
+            _reconnectService.StartGatewayConnectionLoop(_state);
+        };
+        FormClosed += (_, _) =>
+        {
+            CloseConnectionForm();
+            _reconnectService.Dispose();
+        };
+
         Controls.Add(exitButton);
         Controls.Add(title);
-        Controls.Add(info);
-        Controls.Add(ipLabel);
-        Controls.Add(ipInput);
-        Controls.Add(portLabel);
-        Controls.Add(portInput);
         Controls.Add(userLabel);
         Controls.Add(userInput);
         Controls.Add(passLabel);
         Controls.Add(passInput);
-        Controls.Add(statusLabel);
-        Controls.Add(connectButton);
         Controls.Add(loginButton);
         Controls.Add(registerButton);
+
+        void OpenLobbyOnce()
+        {
+            if (_lobbyOpened)
+            {
+                return;
+            }
+
+            _lobbyOpened = true;
+            CloseConnectionForm();
+            Hide();
+
+            using (var splashForm = new SplashForm())
+            {
+                splashForm.ShowDialog();
+            }
+
+            var lobbyForm = new LobbyForm(_state, _socketService);
+            lobbyForm.FormClosed += (_, _) =>
+            {
+                _lobbyOpened = false;
+                Show();
+            };
+            lobbyForm.Show();
+        }
     }
 
-    // Hàm đảm bảo update UI an toàn (tránh lỗi cross-thread)
+    private void ShowConnectionForm()
+    {
+        if (_connectionForm is not null && !_connectionForm.IsDisposed)
+        {
+            if (!_connectionForm.Visible)
+            {
+                _connectionForm.Show();
+            }
+
+            return;
+        }
+
+        _connectionForm = new GatewayConnectionForm();
+        _connectionForm.FormClosed += (_, _) =>
+        {
+            if (_state.ConnectionState != ClientConnectionState.Connected && !_lobbyOpened)
+            {
+                Close();
+            }
+        };
+        _connectionForm.Show();
+    }
+
+    private void CloseConnectionForm()
+    {
+        if (_connectionForm is null || _connectionForm.IsDisposed)
+        {
+            _connectionForm = null;
+            return;
+        }
+
+        var form = _connectionForm;
+        _connectionForm = null;
+        form.Close();
+    }
+
     private void UpdateUiSafe(Action update)
     {
-        if (!IsHandleCreated || IsDisposed) return;
+        if (!IsHandleCreated || IsDisposed)
+        {
+            return;
+        }
+
         BeginInvoke(update);
     }
 }
