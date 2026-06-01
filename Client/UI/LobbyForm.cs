@@ -1,10 +1,11 @@
 using Client.Services;
 using Client.State;
+using Client.Utils; // THÊM DÒNG NÀY ĐỂ SỬ DỤNG APP_THEME
 using Shared.Enums;
 using Shared.Models;
 using System;
 using System.Drawing;
-using System.Drawing.Imaging; // BẮT BUỘC THÊM DÒNG NÀY ĐỂ XỬ LÝ ẢNH CHÌM
+using System.Drawing.Imaging;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Siticone.Desktop.UI.WinForms;
@@ -36,8 +37,8 @@ public sealed class LobbyForm : Form
         Height = 520;
         StartPosition = FormStartPosition.CenterScreen;
 
-        // Màu nền Dark Theme gốc
-        BackColor = Color.FromArgb(20, 27, 45);
+        // CẬP NHẬT: Sử dụng Dark theme chuẩn cho Form thay vì mã màu cố định
+        AppTheme.ApplyDarkForm(this);
 
         _borderlessForm = new SiticoneBorderlessForm()
         {
@@ -46,7 +47,7 @@ public sealed class LobbyForm : Form
         };
 
         var dragControl = new SiticoneDragControl { TargetControl = this };
-        var exitButton = new SiticoneControlBox { Anchor = AnchorStyles.Top | AnchorStyles.Right, FillColor = Color.Transparent, IconColor = Color.LightGray, Left = 800, Top = 0 };
+        var exitButton = new SiticoneControlBox { Anchor = AnchorStyles.Top | AnchorStyles.Right, FillColor = Color.Transparent, IconColor = AppTheme.SubText, Left = 800, Top = 0 };
 
         var title = new Label
         {
@@ -54,58 +55,64 @@ public sealed class LobbyForm : Form
             AutoSize = true,
             Left = 20,
             Top = 15,
-            Font = new Font("Segoe UI", 16, FontStyle.Bold),
-            ForeColor = Color.White,
+            Font = AppTheme.TitleFont,
+            ForeColor = AppTheme.Text,
             BackColor = Color.Transparent
         };
 
-        // --- THANH CÔNG CỤ (Đã nới rộng tọa độ để chữ không bị cụt) ---
-        var createButton = new SiticoneButton { Text = "Tạo Phòng", Left = 20, Top = 65, Width = 130, Height = 40, BorderRadius = 8, FillColor = Color.FromArgb(135, 116, 225), Font = new Font("Segoe UI", 10, FontStyle.Bold), Cursor = Cursors.Hand };
+        // --- THANH CÔNG CỤ ---
+        var createButton = new SiticoneButton { Text = "Tạo Phòng", Left = 20, Top = 65, Width = 130, Height = 40, Cursor = Cursors.Hand };
+        AppTheme.StylePrimaryButton(createButton);
 
-        // Nới rộng nút Làm mới lên Width = 110, dịch sang phải Left = 160
-        var refreshButton = new SiticoneButton { Text = "Làm mới", Left = 160, Top = 65, Width = 110, Height = 40, BorderRadius = 8, FillColor = Color.FromArgb(43, 82, 120), Font = new Font("Segoe UI", 10, FontStyle.Bold), Cursor = Cursors.Hand };
+        // Nút làm mới dùng màu Border phối hợp font Header của hệ thống
+        var refreshButton = new SiticoneButton { Text = "Làm mới", Left = 160, Top = 65, Width = 110, Height = 40, BorderRadius = 8, FillColor = AppTheme.Border, ForeColor = AppTheme.Text, Font = AppTheme.HeaderFont, Cursor = Cursors.Hand };
 
-        var joinLabel = new Label { Text = "Mã phòng:", Left = 285, Top = 75, AutoSize = true, Font = new Font("Segoe UI", 10, FontStyle.Bold), ForeColor = Color.White, BackColor = Color.Transparent };
+        var joinLabel = new Label { Text = "Mã phòng:", Left = 285, Top = 75, AutoSize = true, BackColor = Color.Transparent };
+        AppTheme.StyleLabel(joinLabel);
+        joinLabel.Font = AppTheme.HeaderFont;
 
         _roomCodeInput.Left = 380; _roomCodeInput.Top = 65; _roomCodeInput.Width = 140; _roomCodeInput.Height = 40;
-        _roomCodeInput.BorderRadius = 8; _roomCodeInput.Font = new Font("Segoe UI", 10, FontStyle.Bold);
         _roomCodeInput.PlaceholderText = "Nhập mã..."; _roomCodeInput.CharacterCasing = CharacterCasing.Upper;
-        _roomCodeInput.FillColor = Color.FromArgb(31, 41, 54);
-        _roomCodeInput.ForeColor = Color.White;
-        _roomCodeInput.BorderColor = Color.FromArgb(70, 85, 100);
+        AppTheme.StyleTextBox(_roomCodeInput);
+        _roomCodeInput.Font = AppTheme.HeaderFont;
 
-        var joinButton = new SiticoneButton { Text = "Vào", Left = 530, Top = 65, Width = 90, Height = 40, BorderRadius = 8, FillColor = Color.FromArgb(135, 116, 225), Font = new Font("Segoe UI", 10, FontStyle.Bold), Cursor = Cursors.Hand };
+        var joinButton = new SiticoneButton { Text = "Vào", Left = 530, Top = 65, Width = 90, Height = 40, Cursor = Cursors.Hand };
+        AppTheme.StylePrimaryButton(joinButton);
 
         _statusLabel.Left = 20; _statusLabel.Top = 120; _statusLabel.Width = 800;
         _statusLabel.Text = "Chào mừng bạn đến với xưởng vẽ!";
-        _statusLabel.Font = new Font("Segoe UI", 10, FontStyle.Italic);
-        _statusLabel.ForeColor = Color.LightGray;
+        AppTheme.StyleLabel(_statusLabel);
+        _statusLabel.Font = new Font(AppTheme.NormalFont, FontStyle.Italic);
+        _statusLabel.ForeColor = AppTheme.SubText;
         _statusLabel.BackColor = Color.Transparent;
 
         // --- DANH SÁCH PHÒNG CHỜ ---
-        var roomLabel = new Label { Text = "Phòng chờ (Nhấp đúp để vào)", Left = 20, Top = 150, AutoSize = true, Font = new Font("Segoe UI", 10, FontStyle.Bold), ForeColor = Color.White, BackColor = Color.Transparent };
+        var roomLabel = new Label { Text = "Phòng chờ (Nhấp đúp để vào)", Left = 20, Top = 150, AutoSize = true, BackColor = Color.Transparent };
+        AppTheme.StyleLabel(roomLabel);
+        roomLabel.Font = AppTheme.HeaderFont;
 
-        var roomPanel = new SiticonePanel { Left = 20, Top = 180, Width = 390, Height = 250, BorderRadius = 10, FillColor = Color.FromArgb(31, 41, 54), BorderColor = Color.FromArgb(70, 85, 100), BorderThickness = 2 };
+        var roomPanel = new SiticonePanel { Left = 20, Top = 180, Width = 390, Height = 250 };
+        AppTheme.StylePanel(roomPanel);
+
         _roomList.Left = 10; _roomList.Top = 15; _roomList.Width = 370; _roomList.Height = 220;
-        _roomList.BorderStyle = BorderStyle.None;
-        _roomList.BackColor = Color.FromArgb(31, 41, 54);
-        _roomList.ForeColor = Color.White;
-        _roomList.Font = new Font("Segoe UI", 11);
+        AppTheme.StyleListBox(_roomList);
         roomPanel.Controls.Add(_roomList);
 
         // --- DANH SÁCH NGƯỜI CHƠI ---
-        var playerLabel = new Label { Text = "Họa sĩ trong phòng", Left = 430, Top = 150, AutoSize = true, Font = new Font("Segoe UI", 10, FontStyle.Bold), ForeColor = Color.White, BackColor = Color.Transparent };
+        var playerLabel = new Label { Text = "Họa sĩ trong phòng", Left = 430, Top = 150, AutoSize = true, BackColor = Color.Transparent };
+        AppTheme.StyleLabel(playerLabel);
+        playerLabel.Font = AppTheme.HeaderFont;
 
-        var playerPanel = new SiticonePanel { Left = 430, Top = 180, Width = 390, Height = 250, BorderRadius = 10, FillColor = Color.FromArgb(31, 41, 54), BorderColor = Color.FromArgb(70, 85, 100), BorderThickness = 2 };
+        var playerPanel = new SiticonePanel { Left = 430, Top = 180, Width = 390, Height = 250 };
+        AppTheme.StylePanel(playerPanel);
+
         _playerList.Left = 10; _playerList.Top = 15; _playerList.Width = 370; _playerList.Height = 220;
-        _playerList.BorderStyle = BorderStyle.None;
-        _playerList.BackColor = Color.FromArgb(31, 41, 54);
-        _playerList.ForeColor = Color.White;
-        _playerList.Font = new Font("Segoe UI", 11);
+        AppTheme.StyleListBox(_playerList);
         playerPanel.Controls.Add(_playerList);
 
         // --- NÚT VÀO GAME ---
-        var openGameButton = new SiticoneButton { Text = "Bắt đầu Game", Left = 660, Top = 450, Width = 160, Height = 45, Enabled = false, BorderRadius = 8, FillColor = Color.FromArgb(46, 204, 113), Font = new Font("Segoe UI", 11, FontStyle.Bold), Cursor = Cursors.Hand };
+        var openGameButton = new SiticoneButton { Text = "Bắt đầu Game", Left = 660, Top = 450, Width = 160, Height = 45, Enabled = false, Cursor = Cursors.Hand };
+        AppTheme.StyleSuccessButton(openGameButton);
 
         // --- GÁN SỰ KIỆN ---
         createButton.Click += async (_, _) => await SendCreateRoomAsync();
@@ -125,9 +132,9 @@ public sealed class LobbyForm : Form
 
         void SetOpenGameButtonState() { openGameButton.Enabled = !string.IsNullOrWhiteSpace(_state.RoomCode); }
         async Task SendCreateRoomAsync() { if (!EnsureLoggedIn()) return; _statusLabel.Text = "Đang tạo phòng..."; await _socketService.SendAsync(GameMessageFactory.CreateRoom(GetPlayerName(), _state.SessionId!)); }
-        async Task SendJoinRoomAsync() { if (!EnsureLoggedIn()) return; var roomCode = _roomCodeInput.Text.Trim().ToUpperInvariant(); if (string.IsNullOrWhiteSpace(roomCode)) { _statusLabel.Text = "Hãy nhập mã phòng trước."; _statusLabel.ForeColor = Color.Tomato; return; } _statusLabel.Text = $"Đang vào phòng {roomCode}..."; await _socketService.SendAsync(GameMessageFactory.JoinRoom(roomCode, GetPlayerName(), _state.SessionId!)); }
+        async Task SendJoinRoomAsync() { if (!EnsureLoggedIn()) return; var roomCode = _roomCodeInput.Text.Trim().ToUpperInvariant(); if (string.IsNullOrWhiteSpace(roomCode)) { _statusLabel.Text = "Hãy nhập mã phòng trước."; _statusLabel.ForeColor = AppTheme.Danger; return; } _statusLabel.Text = $"Đang vào phòng {roomCode}..."; await _socketService.SendAsync(GameMessageFactory.JoinRoom(roomCode, GetPlayerName(), _state.SessionId!)); }
         void OpenGame() { Hide(); new GameForm(_state, _socketService, _dispatcher).ShowDialog(); Show(); }
-        bool EnsureLoggedIn() { if (!string.IsNullOrWhiteSpace(_state.SessionId)) return true; _statusLabel.Text = "Vui lòng đăng nhập trước khi dùng sảnh chờ."; _statusLabel.ForeColor = Color.Tomato; return false; }
+        bool EnsureLoggedIn() { if (!string.IsNullOrWhiteSpace(_state.SessionId)) return true; _statusLabel.Text = "Vui lòng đăng nhập trước khi dùng sảnh chờ."; _statusLabel.ForeColor = AppTheme.Danger; return false; }
         string GetPlayerName() { return _state.Username ?? _state.PlayerId ?? "Player"; }
 
         void OnMessageReceived(object? sender, GameMessage message)
@@ -138,10 +145,10 @@ public sealed class LobbyForm : Form
                 _dispatcher.Dispatch(message);
                 switch (message.Type)
                 {
-                    case MessageType.RoomJoined: _statusLabel.Text = $"Đã vào phòng {_state.RoomCode}."; _statusLabel.ForeColor = Color.SpringGreen; SetOpenGameButtonState(); break;
+                    case MessageType.RoomJoined: _statusLabel.Text = $"Đã vào phòng {_state.RoomCode}."; _statusLabel.ForeColor = AppTheme.Success; SetOpenGameButtonState(); break;
                     case MessageType.PlayerList: RenderPlayerList(); break;
                     case MessageType.RoomList: RenderRoomList(); break;
-                    case MessageType.Error: _statusLabel.Text = _state.LastErrorMessage ?? "Thao tác thất bại."; _statusLabel.ForeColor = Color.Tomato; break;
+                    case MessageType.Error: _statusLabel.Text = _state.LastErrorMessage ?? "Thao tác thất bại."; _statusLabel.ForeColor = AppTheme.Danger; break;
                 }
             });
         }
@@ -157,7 +164,6 @@ public sealed class LobbyForm : Form
     {
         try
         {
-            // Tự động tìm file theo chuẩn .jpg hoặc .png
             string bgPath = "doodle_bg.png";
             if (System.IO.File.Exists("doodle_bg.jpg")) bgPath = "doodle_bg.jpg";
 
@@ -165,23 +171,19 @@ public sealed class LobbyForm : Form
 
             Image original = Image.FromFile(bgPath);
 
-            // Tạo một khung tranh ảo bằng kích thước ảnh gốc
             Bitmap bmp = new Bitmap(original.Width, original.Height);
             using (Graphics g = Graphics.FromImage(bmp))
             {
-                // Phủ 1 lớp màu xanh Navy đặc làm nền dưới cùng
-                g.Clear(Color.FromArgb(20, 27, 45));
+                // CẬP NHẬT: Phủ màu tối dựa trên cấu hình AppTheme.DarkBg thống nhất
+                g.Clear(AppTheme.DarkBg);
 
-                // Chỉnh độ mờ (Opacity) của ảnh gốc xuống chỉ còn 12% (0.12f)
                 ColorMatrix matrix = new ColorMatrix { Matrix33 = 0.12f };
                 ImageAttributes attributes = new ImageAttributes();
                 attributes.SetColorMatrix(matrix, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
 
-                // Đặt ảnh gốc (đã được làm mờ 12%) đè lên lớp nền Navy
                 g.DrawImage(original, new Rectangle(0, 0, bmp.Width, bmp.Height), 0, 0, original.Width, original.Height, GraphicsUnit.Pixel, attributes);
             }
 
-            // Xuất xưởng bức tranh tuyệt đẹp làm hình nền!
             this.BackgroundImage = bmp;
             this.BackgroundImageLayout = ImageLayout.Tile;
         }
