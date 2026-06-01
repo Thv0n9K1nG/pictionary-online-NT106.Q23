@@ -251,6 +251,7 @@ public sealed class LoginForm : Form
         Controls.Add(passInput);
         Controls.Add(loginButton);
         Controls.Add(registerButton);
+        AppTheme.ApplyCornerLogo(this, "TopRight");
 
         void OpenLobbyOnce()
         {
@@ -312,6 +313,7 @@ public sealed class LoginForm : Form
         var form = _connectionForm;
         _connectionForm = null;
         form.Close();
+
     }
 
     private void UpdateUiSafe(Action update)

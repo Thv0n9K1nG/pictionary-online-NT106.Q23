@@ -50,8 +50,61 @@ public static class AppTheme
 		form.BackColor = DarkBg;
 		form.ForeColor = Text;
 	}
+    public static void ApplyCornerLogo(Form form, string corner = "TopLeft")
+    {
+        var picCornerLogo = new PictureBox
+        {
+            Size = new Size(90, 55), // Kích thước logo thu nhỏ ở góc
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.Transparent
+        };
 
-	public static void StylePrimaryButton(
+        // Load ảnh tương đối từ thư mục gốc (đã cấu hình từ bước trước)
+        try
+        {
+            if (System.IO.File.Exists("logo.png"))
+            {
+                picCornerLogo.Image = Image.FromFile("logo.png");
+            }
+        }
+        catch { /* Bỏ qua nếu lỗi */ }
+
+        // Tính toán vị trí dựa theo góc bạn chọn
+        switch (corner)
+        {
+            case "TopLeft":
+                picCornerLogo.Left = 15;
+                picCornerLogo.Top = 12;
+                picCornerLogo.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+                break;
+
+            case "TopRight":
+                // Cách cạnh phải 60px (để tránh đè vào nút Exit của Siticone thường cách 40-50px)
+                picCornerLogo.Left = form.Width - picCornerLogo.Width - 60;
+                picCornerLogo.Top = 10;
+                picCornerLogo.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+                break;
+
+            case "BottomRight":
+                picCornerLogo.Left = form.Width - picCornerLogo.Width - 15;
+                picCornerLogo.Top = form.Height - picCornerLogo.Height - 15;
+                picCornerLogo.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+                break;
+
+            case "BottomLeft":
+                picCornerLogo.Left = 15;
+                picCornerLogo.Top = form.Height - picCornerLogo.Height - 15;
+                picCornerLogo.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+                break;
+        }
+
+        // Add vào form
+        form.Controls.Add(picCornerLogo);
+
+        // MẸO WINFORMS: Ép logo luôn nổi lên trên cùng, không bị các Panel hay Background đè mất
+        picCornerLogo.BringToFront();
+    }
+    public static void StylePrimaryButton(
 		SiticoneButton btn)
 	{
 		btn.FillColor = Primary;
