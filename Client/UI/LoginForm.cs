@@ -1,10 +1,11 @@
 using Client.Services;
 using Client.State;
+using Client.Utils; // THÊM DÒNG NÀY ĐỂ SỬ DỤNG APP_THEME
 using Shared.Enums;
 using System;
 using System.Drawing;
 using System.Windows.Forms;
-using Siticone.Desktop.UI.WinForms; // BẮT BUỘC CÓ DÒNG NÀY
+using Siticone.Desktop.UI.WinForms;
 
 namespace Client.UI;
 
@@ -23,9 +24,11 @@ public sealed class LoginForm : Form
 
         Text = "Pictionary Online - Login";
         Width = 460;
-        Height = 420; // Đã tăng chiều cao để đủ chỗ cho các TextBox cách xa nhau
+        Height = 420;
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Color.White; // Nền màu trắng tinh tế
+
+        // CẬP NHẬT: Sử dụng Dark theme cho Form
+        AppTheme.ApplyDarkForm(this);
 
         // Khởi tạo Form bo góc (Đã sửa lỗi ContainerControl)
         _borderlessForm = new SiticoneBorderlessForm()
@@ -38,14 +41,14 @@ public sealed class LoginForm : Form
         var dragControl = new SiticoneDragControl { TargetControl = this };
 
         // Nút tắt Form ở góc trên cùng bên phải
-        var exitButton = new SiticoneControlBox { Anchor = AnchorStyles.Top | AnchorStyles.Right, FillColor = Color.Transparent, IconColor = Color.Gray, Left = 410, Top = 0 };
+        var exitButton = new SiticoneControlBox { Anchor = AnchorStyles.Top | AnchorStyles.Right, FillColor = Color.Transparent, IconColor = AppTheme.SubText, Left = 410, Top = 0 };
 
         var title = new Label
         {
             Text = "Pictionary Online",
             AutoSize = true,
-            Font = new Font("Segoe UI", 18, FontStyle.Bold),
-            ForeColor = Color.FromArgb(94, 148, 255), // Xanh dương Siticone
+            Font = AppTheme.TitleFont,
+            ForeColor = AppTheme.Primary, // Màu tím chủ đạo của hệ thống
             Left = 30,
             Top = 20
         };
@@ -54,31 +57,37 @@ public sealed class LoginForm : Form
         {
             Text = "Baseline client: connect to Gateway only.",
             AutoSize = true,
-            Font = new Font("Segoe UI", 9, FontStyle.Regular),
+            Font = AppTheme.NormalFont,
+            ForeColor = AppTheme.SubText,
             Left = 30,
             Top = 60
         };
 
-        // --- CÁC TRƯỜNG NHẬP LIỆU (Đã căn chỉnh lại Left = 140 chống đè chữ) ---
-        var ipLabel = new Label { Text = "Gateway IP:", Left = 30, Top = 103, AutoSize = true, Font = new Font("Segoe UI", 10) };
-        var ipInput = new SiticoneTextBox { Text = "127.0.0.1", Left = 140, Top = 95, Width = 150, Height = 36, BorderRadius = 5, Font = new Font("Segoe UI", 10) };
+        // --- CÁC TRƯỜNG NHẬP LIỆU ---
+        var ipLabel = new Label { Text = "Gateway IP:", Left = 30, Top = 103, AutoSize = true };
+        AppTheme.StyleLabel(ipLabel);
+        var ipInput = new SiticoneTextBox { Text = "127.0.0.1", Left = 140, Top = 95, Width = 150, Height = 36 };
+        AppTheme.StyleTextBox(ipInput);
 
-        var portLabel = new Label { Text = "Port:", Left = 30, Top = 148, AutoSize = true, Font = new Font("Segoe UI", 10) };
-        var portInput = new SiticoneTextBox { Text = "5000", Left = 140, Top = 140, Width = 80, Height = 36, BorderRadius = 5, Font = new Font("Segoe UI", 10) };
+        var portLabel = new Label { Text = "Port:", Left = 30, Top = 148, AutoSize = true };
+        AppTheme.StyleLabel(portLabel);
+        var portInput = new SiticoneTextBox { Text = "5000", Left = 140, Top = 140, Width = 80, Height = 36 };
+        AppTheme.StyleTextBox(portInput);
 
-        var userLabel = new Label { Text = "Username:", Left = 30, Top = 193, AutoSize = true, Font = new Font("Segoe UI", 10) };
+        var userLabel = new Label { Text = "Username:", Left = 30, Top = 193, AutoSize = true };
+        AppTheme.StyleLabel(userLabel);
         var userInput = new SiticoneTextBox
         {
             Left = 140,
             Top = 185,
             Width = 200,
             Height = 36,
-            BorderRadius = 5,
-            PlaceholderText = "Nhập tài khoản...",
-            Font = new Font("Segoe UI", 10)
+            PlaceholderText = "Nhập tài khoản..."
         };
+        AppTheme.StyleTextBox(userInput);
 
-        var passLabel = new Label { Text = "Password:", Left = 30, Top = 238, AutoSize = true, Font = new Font("Segoe UI", 10) };
+        var passLabel = new Label { Text = "Password:", Left = 30, Top = 238, AutoSize = true };
+        AppTheme.StyleLabel(passLabel);
         var passInput = new SiticoneTextBox
         {
             Left = 140,
@@ -86,14 +95,15 @@ public sealed class LoginForm : Form
             Width = 200,
             Height = 36,
             UseSystemPasswordChar = true,
-            BorderRadius = 5,
-            PlaceholderText = "Nhập mật khẩu...",
-            Font = new Font("Segoe UI", 10)
+            PlaceholderText = "Nhập mật khẩu..."
         };
+        AppTheme.StyleTextBox(passInput);
 
-        var statusLabel = new Label { Text = "Chưa kết nối.", Left = 30, Top = 285, AutoSize = true, ForeColor = Color.Gray, Font = new Font("Segoe UI", 10) };
+        var statusLabel = new Label { Text = "Chưa kết nối.", Left = 30, Top = 285, AutoSize = true };
+        AppTheme.StyleLabel(statusLabel);
+        statusLabel.ForeColor = AppTheme.SubText;
 
-        // --- CÁC NÚT TƯƠNG TÁC (Width = 105, Căn cách đều) ---
+        // --- CÁC NÚT TƯƠNG TÁC ---
         var connectButton = new SiticoneButton
         {
             Text = "Connect",
@@ -101,11 +111,9 @@ public sealed class LoginForm : Form
             Top = 320,
             Width = 105,
             Height = 40,
-            BorderRadius = 5,
-            FillColor = Color.FromArgb(94, 148, 255),
-            Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold)
+            Cursor = Cursors.Hand
         };
+        AppTheme.StylePrimaryButton(connectButton);
 
         var loginButton = new SiticoneButton
         {
@@ -115,11 +123,9 @@ public sealed class LoginForm : Form
             Width = 105,
             Height = 40,
             Enabled = false,
-            BorderRadius = 5,
-            FillColor = Color.FromArgb(46, 204, 113),
-            Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold)
+            Cursor = Cursors.Hand
         };
+        AppTheme.StyleSuccessButton(loginButton);
 
         var registerButton = new SiticoneButton
         {
@@ -129,11 +135,13 @@ public sealed class LoginForm : Form
             Width = 105,
             Height = 40,
             Enabled = false,
-            BorderRadius = 5,
-            FillColor = Color.FromArgb(243, 156, 18),
-            Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold)
+            Cursor = Cursors.Hand
         };
+        // Style thủ công theo chuẩn Warning của Theme (Do AppTheme chưa viết sẵn StyleWarningButton)
+        registerButton.FillColor = AppTheme.Warning;
+        registerButton.ForeColor = AppTheme.Text;
+        registerButton.BorderRadius = 8;
+        registerButton.Font = AppTheme.HeaderFont;
 
         // --- XỬ LÝ LỖI MẤT KẾT NỐI TỪ CODE GỐC CỦA NHÓM ---
         _socketService.ReceiveError += (_, error) =>
@@ -141,7 +149,7 @@ public sealed class LoginForm : Form
             UpdateUiSafe(() =>
             {
                 statusLabel.Text = error;
-                statusLabel.ForeColor = Color.Red;
+                statusLabel.ForeColor = AppTheme.Danger; // Đổi sang màu Danger thống nhất
             });
         };
 
@@ -155,12 +163,12 @@ public sealed class LoginForm : Form
                     loginButton.Enabled = false;
                     registerButton.Enabled = false;
                     statusLabel.Text = "Disconnected from Gateway.";
-                    statusLabel.ForeColor = Color.Red;
+                    statusLabel.ForeColor = AppTheme.Danger; // Đổi sang màu Danger thống nhất
                 }
             });
         };
 
-        // --- XỬ LÝ TIN NHẮN SOCKET TỪ SERVER (Có báo lỗi & Tự động chuyển Form) ---
+        // --- XỬ LÝ TIN NHẮN SOCKET TỪ SERVER ---
         _socketService.MessageReceived += (_, message) =>
         {
             UpdateUiSafe(() =>
@@ -171,10 +179,18 @@ public sealed class LoginForm : Form
                 {
                     case MessageType.LoginSuccess when !string.IsNullOrWhiteSpace(_state.SessionId):
                         statusLabel.Text = $"Xin chào, {_state.Username ?? userInput.Text}!";
-                        statusLabel.ForeColor = Color.Green;
+                        statusLabel.ForeColor = AppTheme.Success;
 
-                        // Chuyển sang LobbyForm tự động
+                        // 1. Ẩn LoginForm đi
                         Hide();
+
+                        // 2. Gọi màn hình chào Logo chạy loading (Dùng ShowDialog để ép đợi chạy xong)
+                        using (var splashForm = new SplashForm())
+                        {
+                            splashForm.ShowDialog();
+                        }
+
+                        // 3. Sau khi SplashForm đóng, tự động mở và chuyển sang LobbyForm
                         var lobbyForm = new LobbyForm(_state, _socketService);
                         lobbyForm.FormClosed += (s, args) => Show();
                         lobbyForm.Show();
@@ -182,14 +198,14 @@ public sealed class LoginForm : Form
 
                     case MessageType.LoginSuccess:
                         statusLabel.Text = "Lỗi: Không nhận được SessionId từ Server.";
-                        statusLabel.ForeColor = Color.Red;
+                        statusLabel.ForeColor = AppTheme.Danger;
                         break;
 
                     case MessageType.LoginFailed:
                     case MessageType.RegisterFailed:
                     case MessageType.Error:
                         statusLabel.Text = _state.LastErrorMessage ?? "Yêu cầu thất bại.";
-                        statusLabel.ForeColor = Color.Red;
+                        statusLabel.ForeColor = AppTheme.Danger;
 
                         if (message.Type == MessageType.LoginFailed)
                             MessageBox.Show("Sai tài khoản hoặc mật khẩu! Vui lòng thử lại.", "Lỗi Đăng Nhập", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -199,7 +215,7 @@ public sealed class LoginForm : Form
 
                     case MessageType.RegisterSuccess:
                         statusLabel.Text = "Đăng ký thành công!";
-                        statusLabel.ForeColor = Color.Green;
+                        statusLabel.ForeColor = AppTheme.Success;
                         MessageBox.Show("Tạo tài khoản thành công! Bây giờ bạn có thể nhấn Login.", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         break;
                 }
@@ -213,26 +229,26 @@ public sealed class LoginForm : Form
             if (!int.TryParse(portInput.Text.Trim(), out var port))
             {
                 statusLabel.Text = "Invalid port.";
-                statusLabel.ForeColor = Color.Red;
+                statusLabel.ForeColor = AppTheme.Danger;
                 return;
             }
 
             statusLabel.Text = "Connecting...";
-            statusLabel.ForeColor = Color.FromArgb(94, 148, 255);
+            statusLabel.ForeColor = AppTheme.Primary;
             connectButton.Enabled = false;
 
             try
             {
                 await _socketService.ConnectAsync(host, port);
                 statusLabel.Text = "Connected to Gateway.";
-                statusLabel.ForeColor = Color.Green;
+                statusLabel.ForeColor = AppTheme.Success;
                 loginButton.Enabled = true;
                 registerButton.Enabled = true;
             }
             catch (Exception ex)
             {
                 statusLabel.Text = $"Connection failed: {ex.Message}";
-                statusLabel.ForeColor = Color.Red;
+                statusLabel.ForeColor = AppTheme.Danger;
                 connectButton.Enabled = true;
             }
         };
