@@ -72,7 +72,7 @@ public sealed class HistoryForm : Form
 
         historyPanel.Controls.Add(_historyList);
         Controls.Add(historyPanel);
-
+        AppTheme.ApplyCornerLogo(this, "TopRight");
         // Đăng ký sự kiện lắng nghe mạng
         _socketService.MessageReceived += OnMessageReceived;
         FormClosed += (_, _) => _socketService.MessageReceived -= OnMessageReceived;
