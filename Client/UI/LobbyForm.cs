@@ -129,7 +129,7 @@ public sealed class LobbyForm : Form
 
         // --- LOAD VÀ XỬ LÝ ẢNH NỀN ---
         SetupDoodleBackground();
-
+        AppTheme.ApplyCornerLogo(this, "TopRight");
         void SetOpenGameButtonState() { openGameButton.Enabled = !string.IsNullOrWhiteSpace(_state.RoomCode); }
         async Task SendCreateRoomAsync() { if (!EnsureLoggedIn()) return; _statusLabel.Text = "Đang tạo phòng..."; await _socketService.SendAsync(GameMessageFactory.CreateRoom(GetPlayerName(), _state.SessionId!)); }
         async Task SendJoinRoomAsync() { if (!EnsureLoggedIn()) return; var roomCode = _roomCodeInput.Text.Trim().ToUpperInvariant(); if (string.IsNullOrWhiteSpace(roomCode)) { _statusLabel.Text = "Hãy nhập mã phòng trước."; _statusLabel.ForeColor = AppTheme.Danger; return; } _statusLabel.Text = $"Đang vào phòng {roomCode}..."; await _socketService.SendAsync(GameMessageFactory.JoinRoom(roomCode, GetPlayerName(), _state.SessionId!)); }
