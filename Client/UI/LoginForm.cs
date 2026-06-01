@@ -286,6 +286,7 @@ public sealed class LoginForm : Form
         Controls.Add(connectButton);
         Controls.Add(loginButton);
         Controls.Add(registerButton);
+        AppTheme.ApplyCornerLogo(this, "TopRight");
     }
 
     // Hàm đảm bảo update UI an toàn (tránh lỗi cross-thread)
