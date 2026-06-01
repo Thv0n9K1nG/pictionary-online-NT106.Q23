@@ -118,6 +118,7 @@ public sealed class GatewayServer
             try
             {
                 var tcpClient = await listener.AcceptTcpClientAsync(cancellationToken);
+                tcpClient.NoDelay = true; // <--- THÊM DÒNG
                 // Tạo một Task riêng để xử lý mỗi Client, tránh làm nghẽn luồng chấp nhận
                 _ = Task.Run(() => HandleClientConnectionAsync(tcpClient, cancellationToken), CancellationToken.None);
             }
@@ -188,6 +189,7 @@ public sealed class GatewayServer
             try
             {
                 var tcpClient = await listener.AcceptTcpClientAsync(cancellationToken);
+                tcpClient.NoDelay = true; // <--- THÊM DÒNG NÀY
                 _ = Task.Run(() => HandleGameServerConnectionAsync(tcpClient, cancellationToken), CancellationToken.None);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException))
