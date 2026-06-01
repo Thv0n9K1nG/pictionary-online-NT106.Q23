@@ -499,3 +499,6 @@ context/
 # Database
 *.db
 *.sqlite3
+
+# .more_features/
+.more_features/
