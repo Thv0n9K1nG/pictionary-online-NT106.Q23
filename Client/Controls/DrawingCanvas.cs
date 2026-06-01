@@ -3,10 +3,12 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using System.Collections.Generic;
 
 namespace Client.Controls;
 
 public enum DrawTool { Pen, Line, Rectangle, Ellipse, Triangle }
+
 
 public sealed class DrawingCanvas : Panel
 {
@@ -15,6 +17,7 @@ public sealed class DrawingCanvas : Panel
     private Point? _lastPoint;
     private Point _startShapePoint;
     private bool _isDrawingShape = false;
+    private readonly List<Point> _curveBuffer = new();
 
     public bool CanDraw { get; set; } = false;
     public string CurrentColor { get; set; } = "#000000";
@@ -54,10 +57,17 @@ public sealed class DrawingCanvas : Panel
 
         if (CurrentTool == DrawTool.Pen)
         {
-            var payload = new DrawPayload(_lastPoint.Value.X, _lastPoint.Value.Y, e.Location.X, e.Location.Y, CurrentColor, BrushSize, IsEraser, DrawTool.Pen.ToString());
-            DrawFromRemote(payload);
-            LocalDraw?.Invoke(this, payload);
-            _lastPoint = e.Location;
+            // Tính khoảng cách chuột
+            double distance = Math.Sqrt(Math.Pow(e.X - _lastPoint.Value.X, 2) + Math.Pow(e.Y - _lastPoint.Value.Y, 2));
+
+            // Chỉ gửi gói tin nếu di chuyển >= 6 pixel
+            if (distance >= 6.0)
+            {
+                var payload = new DrawPayload(_lastPoint.Value.X, _lastPoint.Value.Y, e.Location.X, e.Location.Y, CurrentColor, BrushSize, IsEraser, DrawTool.Pen.ToString());
+                DrawFromRemote(payload);
+                LocalDraw?.Invoke(this, payload);
+                _lastPoint = e.Location;
+            }
         }
         else
         {
@@ -80,6 +90,7 @@ public sealed class DrawingCanvas : Panel
 
         _isDrawingShape = false;
         _lastPoint = null;
+        _curveBuffer.Clear();
     }
 
     private void CommitShape(Graphics g, Point start, Point end)
@@ -156,7 +167,7 @@ public sealed class DrawingCanvas : Panel
         return string.Equals(payload.Color, "CLEAR", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void DrawPenStroke(Graphics g, DrawPayload payload)
+    private void DrawPenStroke(Graphics g, DrawPayload payload)
     {
         using var pen = CreatePen(payload.Color, payload.BrushSize, payload.IsEraser);
         if (pen is null)
@@ -164,7 +175,32 @@ public sealed class DrawingCanvas : Panel
             return;
         }
 
-        g.DrawLine(pen, payload.X1, payload.Y1, payload.X2, payload.Y2);
+        // Reset nếu nét vẽ bị đứt
+        if (_curveBuffer.Count > 0 && (_curveBuffer.Last().X != payload.X1 || _curveBuffer.Last().Y != payload.Y1))
+        {
+            _curveBuffer.Clear();
+        }
+
+        if (_curveBuffer.Count == 0)
+        {
+            _curveBuffer.Add(new Point(payload.X1, payload.Y1));
+        }
+        _curveBuffer.Add(new Point(payload.X2, payload.Y2));
+
+        // Đủ 3 điểm -> Kích hoạt vẽ đường cong
+        if (_curveBuffer.Count >= 3)
+        {
+            g.DrawCurve(pen, _curveBuffer.ToArray(), 0.5f);
+
+            var lastPoint = _curveBuffer.Last();
+            _curveBuffer.Clear();
+            _curveBuffer.Add(lastPoint);
+        }
+        else
+        {
+            // Vẽ nét thẳng nếu chưa đủ đệm
+            g.DrawLine(pen, payload.X1, payload.Y1, payload.X2, payload.Y2);
+        }
     }
 
     public void DrawFromRemote(DrawPayload payload)

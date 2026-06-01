@@ -272,12 +272,12 @@ public sealed class GameRoom
         {
             if (State != GameState.Drawing || string.IsNullOrWhiteSpace(CurrentWord) || RoundStartedAt is null)
             {
-                throw new InvalidOperationException("No active drawing round.");
+                return new GuessResult(false, false, false, Players, 0);
             }
 
             if (CurrentDrawerId == playerId)
             {
-                throw new InvalidOperationException("Drawer cannot guess.");
+                return new GuessResult(false, false, false, Players, 0);
             }
 
             if (_correctGuessers.Contains(playerId))
@@ -319,12 +319,12 @@ public sealed class GameRoom
             // Member A: the GameServer remains authoritative for draw permission and round state.
             if (State != GameState.Drawing)
             {
-                throw new InvalidOperationException("No active drawing round.");
+                return;
             }
 
             if (CurrentDrawerId != playerId)
             {
-                throw new InvalidOperationException("Only the current drawer can draw.");
+                return;
             }
 
             _canvasCommands.Add(payload);

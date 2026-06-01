@@ -69,6 +69,7 @@ public sealed class GameServerNode
     private async Task RunGatewayConnectionAsync(CheckpointService checkpointService, CancellationToken cancellationToken)
     {
         using var tcpClient = new TcpClient();
+        tcpClient.NoDelay = true; // <--- THÊM DÒNG NÀY
         await tcpClient.ConnectAsync(_gatewayHost, _gatewayPort, cancellationToken);
 
         Console.WriteLine($"[GameServer:{_serverId}] Connected to Gateway internal TCP.");
