@@ -17,6 +17,8 @@ public sealed class LobbyForm : Form
     private readonly ClientState _state;
     private readonly SocketService _socketService;
     private readonly MessageDispatcher _dispatcher;
+    private bool _gameOpened;
+    private bool _roomListRequestedOnShown;
 
     private readonly ListBox _roomList = new();
     private readonly ListBox _playerList = new();
@@ -116,12 +118,13 @@ public sealed class LobbyForm : Form
 
         // --- GÁN SỰ KIỆN ---
         createButton.Click += async (_, _) => await SendCreateRoomAsync();
-        refreshButton.Click += async (_, _) => await _socketService.SendAsync(GameMessageFactory.GetRoomList());
+        refreshButton.Click += async (_, _) => await RefreshRoomListAsync();
         joinButton.Click += async (_, _) => await SendJoinRoomAsync();
         openGameButton.Click += (_, _) => OpenGame();
         _roomList.DoubleClick += async (_, _) => { if (_roomList.SelectedItem is RoomInfo room) { _roomCodeInput.Text = room.RoomCode; await SendJoinRoomAsync(); } };
         _socketService.MessageReceived += OnMessageReceived;
         FormClosed += (_, _) => _socketService.MessageReceived -= OnMessageReceived;
+        Shown += async (_, _) => await RefreshRoomListOnFirstShowAsync();
 
         Controls.Add(exitButton); Controls.Add(title); Controls.Add(createButton); Controls.Add(refreshButton);
         Controls.Add(joinLabel); Controls.Add(_roomCodeInput); Controls.Add(joinButton); Controls.Add(_statusLabel);
@@ -133,7 +136,65 @@ public sealed class LobbyForm : Form
         void SetOpenGameButtonState() { openGameButton.Enabled = !string.IsNullOrWhiteSpace(_state.RoomCode); }
         async Task SendCreateRoomAsync() { if (!EnsureLoggedIn()) return; _statusLabel.Text = "Đang tạo phòng..."; await _socketService.SendAsync(GameMessageFactory.CreateRoom(GetPlayerName(), _state.SessionId!)); }
         async Task SendJoinRoomAsync() { if (!EnsureLoggedIn()) return; var roomCode = _roomCodeInput.Text.Trim().ToUpperInvariant(); if (string.IsNullOrWhiteSpace(roomCode)) { _statusLabel.Text = "Hãy nhập mã phòng trước."; _statusLabel.ForeColor = AppTheme.Danger; return; } _statusLabel.Text = $"Đang vào phòng {roomCode}..."; await _socketService.SendAsync(GameMessageFactory.JoinRoom(roomCode, GetPlayerName(), _state.SessionId!)); }
-        void OpenGame() { Hide(); new GameForm(_state, _socketService, _dispatcher).ShowDialog(); Show(); }
+        async Task RefreshRoomListOnFirstShowAsync()
+        {
+            if (_roomListRequestedOnShown)
+            {
+                return;
+            }
+
+            _roomListRequestedOnShown = true;
+            await RefreshRoomListAsync();
+        }
+
+        async Task RefreshRoomListAsync()
+        {
+            if (!EnsureLoggedIn())
+            {
+                return;
+            }
+
+            try
+            {
+                await _socketService.SendAsync(GameMessageFactory.GetRoomList());
+            }
+            catch (Exception ex)
+            {
+                _statusLabel.Text = $"KhÃ´ng thá»ƒ táº£i danh sÃ¡ch phÃ²ng: {ex.Message}";
+                _statusLabel.ForeColor = AppTheme.Danger;
+            }
+        }
+
+        void OpenGame()
+        {
+            if (_gameOpened)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_state.RoomCode))
+            {
+                _statusLabel.Text = "HÃ£y táº¡o hoáº·c vÃ o phÃ²ng trÆ°á»›c khi báº¯t Ä‘áº§u game.";
+                _statusLabel.ForeColor = AppTheme.Danger;
+                return;
+            }
+
+            _gameOpened = true;
+            openGameButton.Enabled = false;
+
+            try
+            {
+                Hide();
+                using var gameForm = new GameForm(_state, _socketService, _dispatcher);
+                gameForm.ShowDialog(this);
+            }
+            finally
+            {
+                _gameOpened = false;
+                SetOpenGameButtonState();
+                Show();
+            }
+        }
         bool EnsureLoggedIn() { if (!string.IsNullOrWhiteSpace(_state.SessionId)) return true; _statusLabel.Text = "Vui lòng đăng nhập trước khi dùng sảnh chờ."; _statusLabel.ForeColor = AppTheme.Danger; return false; }
         string GetPlayerName() { return _state.Username ?? _state.PlayerId ?? "Player"; }
 

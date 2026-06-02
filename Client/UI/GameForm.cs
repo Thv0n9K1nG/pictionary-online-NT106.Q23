@@ -30,13 +30,17 @@ public sealed class GameForm : Form
     private readonly ListView _scoreboard = new();
     private SiticonePanel toolbarPanel = new SiticonePanel();
 
-    private SiticoneBorderlessForm _borderlessForm;
+    private SiticoneBorderlessForm? _borderlessForm;
 
     private GameState _lastGameState = GameState.Waiting;
     private readonly SemaphoreSlim _drawSendLock = new(1, 1);
 
     private readonly System.Windows.Forms.Timer _countdownTimer = new();
     private DateTime _roundEndTime;
+    private bool _eventsRegistered;
+    private bool _eventsUnregistered;
+    private bool _roundResultDialogOpen;
+    private bool _gameResultDialogOpen;
 
     public GameForm(ClientState state, SocketService socketService, MessageDispatcher dispatcher)
     {
@@ -259,6 +263,13 @@ public sealed class GameForm : Form
 
     private void RegisterEvents()
     {
+        if (_eventsRegistered)
+        {
+            return;
+        }
+
+        _eventsRegistered = true;
+
         _canvas.LocalDraw += OnCanvasLocalDraw;
         _state.OnDrawDataReceived += OnRemoteDrawReceived;
 
@@ -273,6 +284,7 @@ public sealed class GameForm : Form
         _btnReady.Click += BtnReady_Click;
         _btnSend.Click += BtnSend_Click;
         _txtGuess.KeyDown += TxtGuess_KeyDown;
+        FormClosed += (_, _) => UnregisterEvents();
 
         _dispatcher.SystemMessageReceived += msg => AppendChat("🔔 [Hệ thống] " + msg, AppTheme.Primary);
         _dispatcher.CorrectGuessReceived += (playerName, scoreAwarded) => {
@@ -281,8 +293,37 @@ public sealed class GameForm : Form
         };
     }
 
+    private void UnregisterEvents()
+    {
+        if (_eventsUnregistered)
+        {
+            return;
+        }
+
+        _eventsUnregistered = true;
+
+        _canvas.LocalDraw -= OnCanvasLocalDraw;
+        _state.OnDrawDataReceived -= OnRemoteDrawReceived;
+
+        _dispatcher.TimerUpdated -= OnTimerUpdated;
+        _dispatcher.HintReceived -= UpdateHint;
+        _dispatcher.GameplayStateChanged -= UpdateGameplayControls;
+        _dispatcher.PlayerListUpdated -= UpdateScoreboard;
+        _dispatcher.WordOptionsReceived -= ShowWordSelection;
+        _dispatcher.RoundEnded -= ShowRoundResult;
+        _dispatcher.GameEnded -= ShowGameResult;
+
+        _btnReady.Click -= BtnReady_Click;
+        _btnSend.Click -= BtnSend_Click;
+        _txtGuess.KeyDown -= TxtGuess_KeyDown;
+
+        _countdownTimer.Tick -= CountdownTimer_Tick;
+        _countdownTimer.Stop();
+    }
+
     private void UpdateGameplayControls()
     {
+        if (_eventsUnregistered || IsDisposed) return;
         if (InvokeRequired) { Invoke(UpdateGameplayControls); return; }
 
         if ((_lastGameState == GameState.Waiting || _lastGameState == GameState.RoundEnd || _lastGameState == GameState.GameOver) &&
@@ -361,6 +402,7 @@ public sealed class GameForm : Form
 
     public void OnTimerUpdated(int remainingSeconds)
     {
+        if (_eventsUnregistered || IsDisposed) return;
         if (InvokeRequired) { BeginInvoke(new Action(() => OnTimerUpdated(remainingSeconds))); return; }
 
         if (_state.CurrentGameState != GameState.Drawing)
@@ -382,6 +424,7 @@ public sealed class GameForm : Form
 
     private void UpdateHint(string hint)
     {
+        if (_eventsUnregistered || IsDisposed) return;
         if (InvokeRequired) { Invoke(() => UpdateHint(hint)); return; }
 
         if (!_state.IsDrawer)
@@ -420,6 +463,7 @@ public sealed class GameForm : Form
 
     public void OnRemoteDrawReceived(DrawPayload payload)
     {
+        if (_eventsUnregistered || IsDisposed) return;
         if (InvokeRequired) { BeginInvoke(new Action(() => OnRemoteDrawReceived(payload))); return; }
         _canvas.DrawFromRemote(payload);
     }
@@ -454,6 +498,7 @@ public sealed class GameForm : Form
 
     private void UpdateScoreboard(System.Collections.Generic.List<PlayerInfo> players)
     {
+        if (_eventsUnregistered || IsDisposed) return;
         if (InvokeRequired) { Invoke(() => UpdateScoreboard(players)); return; }
         _scoreboard.BeginUpdate();
         _scoreboard.Items.Clear();
@@ -482,6 +527,7 @@ public sealed class GameForm : Form
 
     private void AppendChat(string message, Color color)
     {
+        if (_eventsUnregistered || IsDisposed) return;
         if (InvokeRequired) { Invoke(() => AppendChat(message, color)); return; }
         _chatBox.SelectionStart = _chatBox.TextLength;
         _chatBox.SelectionLength = 0;
@@ -493,6 +539,7 @@ public sealed class GameForm : Form
 
     private void ShowWordSelection(System.Collections.Generic.List<string> words)
     {
+        if (_eventsUnregistered || IsDisposed) return;
         if (InvokeRequired) { Invoke(() => ShowWordSelection(words)); return; }
         using var form = new WordSelectionForm(words);
         if (form.ShowDialog() == DialogResult.OK)
@@ -504,7 +551,11 @@ public sealed class GameForm : Form
 
     private void ShowRoundResult(System.Collections.Generic.List<PlayerInfo> players, bool gameEnded)
     {
+        if (_eventsUnregistered || IsDisposed) return;
         if (InvokeRequired) { Invoke(() => ShowRoundResult(players, gameEnded)); return; }
+        if (_roundResultDialogOpen || gameEnded) return;
+
+        _roundResultDialogOpen = true;
         _countdownTimer.Stop();
         UpdateScoreboard(players);
 
@@ -515,12 +566,17 @@ public sealed class GameForm : Form
             _btnReady.Enabled = true;
             _btnReady.Text = "SẴN SÀNG";
             AppTheme.StyleSuccessButton(_btnReady);
+            _roundResultDialogOpen = false;
         }
     }
 
     private void ShowGameResult(MatchResult result)
     {
+        if (_eventsUnregistered || IsDisposed) return;
         if (InvokeRequired) { Invoke(() => ShowGameResult(result)); return; }
+        if (_gameResultDialogOpen) return;
+
+        _gameResultDialogOpen = true;
         _countdownTimer.Stop();
 
         var rows = result.FinalScores
@@ -531,8 +587,17 @@ public sealed class GameForm : Form
             .OrderByDescending(row => row.Value)
             .ToList();
         using var form = new ResultForm("Kết quả Chung cuộc", rows);
+        form.EnableBackToLobby();
         form.ShowDialog(this);
+        if (form.BackToLobbyRequested)
+        {
+            _gameResultDialogOpen = false;
+            Close();
+            return;
+        }
+
         UpdateGameplayControls();
+        _gameResultDialogOpen = false;
     }
 
     private bool EnsureGameplayContext()

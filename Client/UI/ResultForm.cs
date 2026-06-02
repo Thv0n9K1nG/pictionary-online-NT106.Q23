@@ -1,34 +1,37 @@
 namespace Client.UI;
 
-using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
-using Client.Utils; // THÊM DÒNG NÀY ĐỂ DÙNG APP_THEME
-using Siticone.Desktop.UI.WinForms; // THÊM DÒNG NÀY ĐỂ DÙNG CONTROL BOX VÀ BORDERLESS
+using Client.Utils;
+using Siticone.Desktop.UI.WinForms;
 
 public sealed class ResultForm : Form
 {
     private readonly SiticoneBorderlessForm _borderlessForm;
+    private readonly SiticonePanel _mainPanel;
+    private readonly ListBox _resultList;
+    private readonly SiticoneButton _backToLobbyButton;
+
+    public bool BackToLobbyRequested { get; private set; }
 
     public ResultForm(string title, List<(string Username, int Score)> results)
     {
         Text = title;
         Width = 420;
         Height = 450;
-        StartPosition = FormStartPosition.CenterParent; // Hiển thị ngay giữa Form cha (GameForm)
+        StartPosition = FormStartPosition.CenterParent;
 
-        // CẬP NHẬT: Khởi tạo Dark Theme cho bảng kết quả
         AppTheme.ApplyDarkForm(this);
 
-        // Đồng bộ thiết kế viền bo tròn 15px không cạnh phẳng
-        _borderlessForm = new SiticoneBorderlessForm()
+        _borderlessForm = new SiticoneBorderlessForm
         {
             ContainerControl = this,
             BorderRadius = 15
         };
 
-        var dragControl = new SiticoneDragControl { TargetControl = this };
+        _ = new SiticoneDragControl { TargetControl = this };
+
         var exitButton = new SiticoneControlBox
         {
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
@@ -39,10 +42,9 @@ public sealed class ResultForm : Form
         };
         Controls.Add(exitButton);
 
-        // Tiêu đề nổi bật (ví dụ: "Kết quả Vòng" hoặc "Kết quả Chung cuộc")
         var lblTitle = new Label
         {
-            Text = "🏆 " + title,
+            Text = "Result - " + title,
             AutoSize = true,
             Left = 20,
             Top = 18,
@@ -52,11 +54,10 @@ public sealed class ResultForm : Form
         };
         Controls.Add(lblTitle);
 
-        // CẬP NHẬT: Thay thế Dock.Fill thô bằng Panel đệm viền tinh tế
-        var mainPanel = new SiticonePanel { Left = 20, Top = 60, Width = 380, Height = 360 };
-        AppTheme.StylePanel(mainPanel);
+        _mainPanel = new SiticonePanel { Left = 20, Top = 60, Width = 380, Height = 360 };
+        AppTheme.StylePanel(_mainPanel);
 
-        var list = new ListBox
+        _resultList = new ListBox
         {
             Left = 10,
             Top = 10,
@@ -64,16 +65,41 @@ public sealed class ResultForm : Form
             Height = 340,
             BorderStyle = BorderStyle.None
         };
-
-        // Áp dụng theme tối, chữ sáng cho ListBox hiển thị điểm
-        AppTheme.StyleListBox(list);
+        AppTheme.StyleListBox(_resultList);
 
         foreach (var result in results)
         {
-            list.Items.Add($"{result.Username} — {result.Score} điểm");
+            _resultList.Items.Add($"{result.Username} - {result.Score} diem");
         }
 
-        mainPanel.Controls.Add(list);
-        Controls.Add(mainPanel);
+        _mainPanel.Controls.Add(_resultList);
+        Controls.Add(_mainPanel);
+
+        _backToLobbyButton = new SiticoneButton
+        {
+            Text = "Back to Lobby",
+            Left = 115,
+            Top = 430,
+            Width = 190,
+            Height = 42,
+            Visible = false,
+            Cursor = Cursors.Hand
+        };
+        AppTheme.StylePrimaryButton(_backToLobbyButton);
+        _backToLobbyButton.Click += (_, _) =>
+        {
+            BackToLobbyRequested = true;
+            DialogResult = DialogResult.OK;
+            Close();
+        };
+        Controls.Add(_backToLobbyButton);
+    }
+
+    public void EnableBackToLobby()
+    {
+        Height = 520;
+        _mainPanel.Height = 340;
+        _resultList.Height = 320;
+        _backToLobbyButton.Visible = true;
     }
 }
