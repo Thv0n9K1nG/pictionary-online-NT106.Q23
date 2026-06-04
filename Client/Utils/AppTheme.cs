@@ -21,16 +21,19 @@ public static class AppTheme
 	public static readonly Color Warning =
 		Color.FromArgb(243, 156, 18);
 
-	public static readonly Color DarkBg =
-		Color.FromArgb(21, 26, 40);
+    // Nền chính của Form (Màu Xanh lá từ Logo)
+    public static readonly Color DarkBg =
+        Color.FromArgb(42, 75, 46);
 
-	public static readonly Color PanelBg =
-		Color.FromArgb(31, 41, 55);
+    // ĐÃ SỬA: Nền của các Khung (Panel), ListBox - Dùng màu xanh lá đậm hơn nền một chút để tạo độ sâu
+    public static readonly Color PanelBg =
+        Color.FromArgb(30, 55, 33);
 
-	public static readonly Color Border =
-		Color.FromArgb(51, 65, 85);
+    // ĐÃ SỬA: Màu Viền (Border) - Dùng màu xanh lá sáng hơn để tạo điểm nhấn
+    public static readonly Color Border =
+        Color.FromArgb(60, 100, 65);
 
-	public static readonly Color Text =
+    public static readonly Color Text =
 		Color.White;
 
 	public static readonly Color SubText =
@@ -47,8 +50,8 @@ public static class AppTheme
 
 	public static void ApplyDarkForm(Form form)
 	{
-		form.BackColor = DarkBg;
-		form.ForeColor = Text;
+        form.BackColor = Color.FromArgb(42, 75, 46);// Đổi sang màu xanh
+        form.ForeColor = Text;
 	}
     public static void ApplyCornerLogo(Form form, string corner = "TopLeft")
     {

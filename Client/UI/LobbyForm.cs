@@ -69,16 +69,19 @@ public sealed class LobbyForm : Form
         // Nút làm mới dùng màu Border phối hợp font Header của hệ thống
         var refreshButton = new SiticoneButton { Text = "Làm mới", Left = 160, Top = 65, Width = 110, Height = 40, BorderRadius = 8, FillColor = AppTheme.Border, ForeColor = AppTheme.Text, Font = AppTheme.HeaderFont, Cursor = Cursors.Hand };
 
+        // Giữ nguyên Label
         var joinLabel = new Label { Text = "Mã phòng:", Left = 285, Top = 75, AutoSize = true, BackColor = Color.Transparent };
         AppTheme.StyleLabel(joinLabel);
         joinLabel.Font = AppTheme.HeaderFont;
 
-        _roomCodeInput.Left = 380; _roomCodeInput.Top = 65; _roomCodeInput.Width = 140; _roomCodeInput.Height = 40;
+        // ĐÃ SỬA: Tăng Left từ 380 lên 400 để tránh bị đè chữ
+        _roomCodeInput.Left = 400; _roomCodeInput.Top = 65; _roomCodeInput.Width = 140; _roomCodeInput.Height = 40;
         _roomCodeInput.PlaceholderText = "Nhập mã..."; _roomCodeInput.CharacterCasing = CharacterCasing.Upper;
         AppTheme.StyleTextBox(_roomCodeInput);
         _roomCodeInput.Font = AppTheme.HeaderFont;
 
-        var joinButton = new SiticoneButton { Text = "Vào", Left = 530, Top = 65, Width = 90, Height = 40, Cursor = Cursors.Hand };
+        // ĐÃ SỬA: Tăng Left từ 530 lên 550 để chừa chỗ cho TextBox
+        var joinButton = new SiticoneButton { Text = "Vào", Left = 550, Top = 65, Width = 90, Height = 40, Cursor = Cursors.Hand };
         AppTheme.StylePrimaryButton(joinButton);
 
         _statusLabel.Left = 20; _statusLabel.Top = 120; _statusLabel.Width = 800;
@@ -235,8 +238,8 @@ public sealed class LobbyForm : Form
             Bitmap bmp = new Bitmap(original.Width, original.Height);
             using (Graphics g = Graphics.FromImage(bmp))
             {
-                // CẬP NHẬT: Phủ màu tối dựa trên cấu hình AppTheme.DarkBg thống nhất
-                g.Clear(AppTheme.DarkBg);
+
+                g.Clear(Color.FromArgb(42, 75, 46)); //sang màu xanh hơn để phù hợp với theme
 
                 ColorMatrix matrix = new ColorMatrix { Matrix33 = 0.12f };
                 ImageAttributes attributes = new ImageAttributes();
