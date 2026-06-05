@@ -1,6 +1,6 @@
 using Client.Services;
 using Client.State;
-using Client.Utils; // THÊM DÒNG NÀY ĐỂ SỬ DỤNG APP_THEME
+using Client.Utils;
 using Shared.Enums;
 using Shared.Models;
 using System;
@@ -40,7 +40,6 @@ public sealed class LobbyForm : Form
         Height = 520;
         StartPosition = FormStartPosition.CenterScreen;
 
-        // CẬP NHẬT: Sử dụng Dark theme chuẩn cho Form thay vì mã màu cố định
         AppTheme.ApplyDarkForm(this);
 
         _borderlessForm = new SiticoneBorderlessForm()
@@ -50,7 +49,7 @@ public sealed class LobbyForm : Form
         };
 
         var dragControl = new SiticoneDragControl { TargetControl = this };
-        var exitButton = new SiticoneControlBox { Anchor = AnchorStyles.Top | AnchorStyles.Right, FillColor = Color.Transparent, IconColor = AppTheme.SubText, Left = 800, Top = 0 };
+        var exitButton = new SiticoneControlBox { Anchor = AnchorStyles.Top | AnchorStyles.Right, FillColor = Color.Transparent, IconColor = AppTheme.Text, Left = 800, Top = 0 };
 
         var title = new Label
         {
@@ -67,32 +66,30 @@ public sealed class LobbyForm : Form
         var createButton = new SiticoneButton { Text = "Tạo Phòng", Left = 20, Top = 65, Width = 130, Height = 40, Cursor = Cursors.Hand };
         AppTheme.StylePrimaryButton(createButton);
 
-        // Nút làm mới dùng màu Border phối hợp font Header của hệ thống
-        var refreshButton = new SiticoneButton { Text = "Làm mới", Left = 160, Top = 65, Width = 110, Height = 40, BorderRadius = 8, FillColor = AppTheme.Border, ForeColor = AppTheme.Text, Font = AppTheme.HeaderFont, Cursor = Cursors.Hand };
+        // ĐÃ SỬA: Thêm UseTransparentBackground = true để xóa viền rác quanh nút bo tròn
+        var refreshButton = new SiticoneButton { Text = "Làm mới", Left = 160, Top = 65, Width = 110, Height = 40, BorderRadius = 8, FillColor = AppTheme.Border, ForeColor = AppTheme.Text, Font = AppTheme.HeaderFont, Cursor = Cursors.Hand, UseTransparentBackground = true };
 
-        // Giữ nguyên Label
         var joinLabel = new Label { Text = "Mã phòng:", Left = 285, Top = 75, AutoSize = true, BackColor = Color.Transparent };
         AppTheme.StyleLabel(joinLabel);
         joinLabel.Font = AppTheme.HeaderFont;
 
-        // ĐÃ SỬA: Tăng Left từ 380 lên 400 để tránh bị đè chữ
         _roomCodeInput.Left = 400; _roomCodeInput.Top = 65; _roomCodeInput.Width = 140; _roomCodeInput.Height = 40;
         _roomCodeInput.PlaceholderText = "Nhập mã..."; _roomCodeInput.CharacterCasing = CharacterCasing.Upper;
         AppTheme.StyleTextBox(_roomCodeInput);
         _roomCodeInput.Font = AppTheme.HeaderFont;
 
-        // ĐÃ SỬA: Tăng Left từ 530 lên 550 để chừa chỗ cho TextBox
         var joinButton = new SiticoneButton { Text = "Vào", Left = 550, Top = 65, Width = 90, Height = 40, Cursor = Cursors.Hand };
         AppTheme.StylePrimaryButton(joinButton);
 
         var logoutButton = new SiticoneButton { Text = "Logout", Left = 650, Top = 65, Width = 100, Height = 40, Cursor = Cursors.Hand };
         AppTheme.StyleDangerButton(logoutButton);
 
+        // ĐÃ SỬA: Chữ dưới nút Tạo. Đổi sang màu AppTheme.Text (tối) và in đậm (Bold) để không bị chìm vào nền
         _statusLabel.Left = 20; _statusLabel.Top = 120; _statusLabel.Width = 800;
         _statusLabel.Text = "Chào mừng bạn đến với xưởng vẽ!";
         AppTheme.StyleLabel(_statusLabel);
-        _statusLabel.Font = new Font(AppTheme.NormalFont, FontStyle.Italic);
-        _statusLabel.ForeColor = AppTheme.SubText;
+        _statusLabel.Font = new Font(AppTheme.NormalFont.FontFamily, 10, FontStyle.Bold);
+        _statusLabel.ForeColor = AppTheme.Text;
         _statusLabel.BackColor = Color.Transparent;
 
         // --- DANH SÁCH PHÒNG CHỜ ---
@@ -146,15 +143,11 @@ public sealed class LobbyForm : Form
         async Task SendJoinRoomAsync() { if (!EnsureLoggedIn()) return; var roomCode = _roomCodeInput.Text.Trim().ToUpperInvariant(); if (string.IsNullOrWhiteSpace(roomCode)) { _statusLabel.Text = "Hãy nhập mã phòng trước."; _statusLabel.ForeColor = AppTheme.Danger; return; } _statusLabel.Text = $"Đang vào phòng {roomCode}..."; await _socketService.SendAsync(GameMessageFactory.JoinRoom(roomCode, GetPlayerName(), _state.SessionId!)); }
         async Task SendLogoutAsync()
         {
-            if (_loggingOut)
-            {
-                return;
-            }
-
+            if (_loggingOut) return;
             _loggingOut = true;
             logoutButton.Enabled = false;
             _statusLabel.Text = "Đang đăng xuất...";
-            _statusLabel.ForeColor = AppTheme.Warning;
+            _statusLabel.ForeColor = AppTheme.Text;
 
             try
             {
@@ -176,45 +169,25 @@ public sealed class LobbyForm : Form
             Close();
         }
 
-        async Task RefreshRoomListOnFirstShowAsync()
-        {
-            if (_roomListRequestedOnShown)
-            {
-                return;
-            }
-
-            _roomListRequestedOnShown = true;
-            await RefreshRoomListAsync();
-        }
+        async Task RefreshRoomListOnFirstShowAsync() { if (_roomListRequestedOnShown) return; _roomListRequestedOnShown = true; await RefreshRoomListAsync(); }
 
         async Task RefreshRoomListAsync()
         {
-            if (!EnsureLoggedIn())
-            {
-                return;
-            }
-
-            try
-            {
-                await _socketService.SendAsync(GameMessageFactory.GetRoomList());
-            }
+            if (!EnsureLoggedIn()) return;
+            try { await _socketService.SendAsync(GameMessageFactory.GetRoomList()); }
             catch (Exception ex)
             {
-                _statusLabel.Text = $"KhÃ´ng thá»ƒ táº£i danh sÃ¡ch phÃ²ng: {ex.Message}";
+                _statusLabel.Text = $"Không thể tải danh sách phòng: {ex.Message}";
                 _statusLabel.ForeColor = AppTheme.Danger;
             }
         }
 
         void OpenGame()
         {
-            if (_gameOpened)
-            {
-                return;
-            }
-
+            if (_gameOpened) return;
             if (string.IsNullOrWhiteSpace(_state.RoomCode))
             {
-                _statusLabel.Text = "HÃ£y táº¡o hoáº·c vÃ o phÃ²ng trÆ°á»›c khi báº¯t Ä‘áº§u game.";
+                _statusLabel.Text = "Hãy tạo hoặc vào phòng trước khi bắt đầu game.";
                 _statusLabel.ForeColor = AppTheme.Danger;
                 return;
             }
@@ -235,32 +208,39 @@ public sealed class LobbyForm : Form
                 Show();
             }
         }
+
         bool EnsureLoggedIn() { if (!string.IsNullOrWhiteSpace(_state.SessionId)) return true; _statusLabel.Text = "Vui lòng đăng nhập trước khi dùng sảnh chờ."; _statusLabel.ForeColor = AppTheme.Danger; return false; }
         string GetPlayerName() { return _state.Username ?? _state.PlayerId ?? "Player"; }
 
         void OnMessageReceived(object? sender, GameMessage message)
         {
             if (!IsHandleCreated) return;
-            BeginInvoke(() =>
+
+            // ĐÃ SỬA: Thêm new Action() để tránh lỗi đỏ CS1660 của Visual Studio
+            BeginInvoke(new Action(() =>
             {
                 _dispatcher.Dispatch(message);
                 switch (message.Type)
                 {
-                    case MessageType.RoomJoined: _statusLabel.Text = $"Đã vào phòng {_state.RoomCode}."; _statusLabel.ForeColor = AppTheme.Success; SetOpenGameButtonState(); break;
+                    case MessageType.RoomJoined:
+                        _statusLabel.Text = $"Đã vào phòng {_state.RoomCode}.";
+                        _statusLabel.ForeColor = AppTheme.Text; // Đổi thành màu tối cho dễ đọc
+                        SetOpenGameButtonState();
+                        break;
                     case MessageType.PlayerList: RenderPlayerList(); break;
                     case MessageType.RoomList: RenderRoomList(); break;
-                    case MessageType.Error: _statusLabel.Text = _state.LastErrorMessage ?? "Thao tác thất bại."; _statusLabel.ForeColor = AppTheme.Danger; break;
+                    case MessageType.Error:
+                        _statusLabel.Text = _state.LastErrorMessage ?? "Thao tác thất bại.";
+                        _statusLabel.ForeColor = AppTheme.Danger;
+                        break;
                 }
-            });
+            }));
         }
     }
 
     private void RenderRoomList() { _roomList.Items.Clear(); foreach (var room in _state.RoomList) _roomList.Items.Add(room); _roomList.DisplayMember = nameof(RoomInfo.RoomCode); }
     private void RenderPlayerList() { _playerList.Items.Clear(); foreach (var player in _state.PlayerList) _playerList.Items.Add($"🎨 {player.DisplayName} (Điểm: {player.Score})"); }
 
-    // =====================================================================
-    // MA THUẬT: LÀM MỜ ẢNH DOODLE ĐỂ CHỮ NỔI LÊN MẶT TRƯỚC
-    // =====================================================================
     private void SetupDoodleBackground()
     {
         try
@@ -275,10 +255,10 @@ public sealed class LobbyForm : Form
             Bitmap bmp = new Bitmap(original.Width, original.Height);
             using (Graphics g = Graphics.FromImage(bmp))
             {
+                // Tự động dùng màu nền hệ thống cho Doodle để đồng bộ
+                g.Clear(AppTheme.DarkBg);
 
-                g.Clear(Color.FromArgb(42, 75, 46)); //sang màu xanh hơn để phù hợp với theme
-
-                ColorMatrix matrix = new ColorMatrix { Matrix33 = 0.12f };
+                ColorMatrix matrix = new ColorMatrix { Matrix33 = 0.08f }; // Mờ 8% để hài hòa
                 ImageAttributes attributes = new ImageAttributes();
                 attributes.SetColorMatrix(matrix, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
 
@@ -288,9 +268,6 @@ public sealed class LobbyForm : Form
             this.BackgroundImage = bmp;
             this.BackgroundImageLayout = ImageLayout.Tile;
         }
-        catch
-        {
-            // Lỗi thì giữ nguyên màu nền trống
-        }
+        catch { }
     }
 }
