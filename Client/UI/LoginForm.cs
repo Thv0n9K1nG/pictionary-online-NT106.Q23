@@ -3,6 +3,11 @@ using Client.State;
 using Client.Utils;
 using Shared.Enums;
 using Siticone.Desktop.UI.WinForms;
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace Client.UI;
 
@@ -45,6 +50,7 @@ public sealed class LoginForm : Form
             Top = 0
         };
 
+        // ĐÃ SỬA: Thêm BackColor và UseCompatibleTextRendering
         var title = new Label
         {
             Text = "Pictionary Online",
@@ -52,7 +58,9 @@ public sealed class LoginForm : Form
             Font = AppTheme.TitleFont,
             ForeColor = AppTheme.Primary,
             Left = 30,
-            Top = 20
+            Top = 20,
+            BackColor = Color.Transparent,       // Làm nền trong suốt lộ họa tiết Doodle
+            UseCompatibleTextRendering = true    // Chống viền răng cưa
         };
 
         var userLabel = new Label { Text = "Username:", Left = 30, Top = 193, AutoSize = true };
@@ -102,10 +110,13 @@ public sealed class LoginForm : Form
             Enabled = false,
             Cursor = Cursors.Hand
         };
+        // ĐÃ SỬA: Ép chữ màu Trắng và xóa viền rác 4 góc bo
         registerButton.FillColor = AppTheme.Warning;
-        registerButton.ForeColor = AppTheme.Text;
+        registerButton.ForeColor = Color.White;
+        registerButton.HoverState.ForeColor = Color.White;
         registerButton.BorderRadius = 8;
         registerButton.Font = AppTheme.HeaderFont;
+        registerButton.UseTransparentBackground = true;
 
         _state.ConnectionStateChanged += connectionState =>
         {
@@ -252,6 +263,7 @@ public sealed class LoginForm : Form
         Controls.Add(loginButton);
         Controls.Add(registerButton);
         AppTheme.ApplyCornerLogo(this, "TopRight");
+        SetupDoodleBackground();
 
         void OpenLobbyOnce()
         {
@@ -313,7 +325,6 @@ public sealed class LoginForm : Form
         var form = _connectionForm;
         _connectionForm = null;
         form.Close();
-
     }
 
     private void UpdateUiSafe(Action update)
@@ -324,5 +335,30 @@ public sealed class LoginForm : Form
         }
 
         BeginInvoke(update);
+    }
+
+    private void SetupDoodleBackground()
+    {
+        try
+        {
+            if (System.IO.File.Exists("doodle_bg.png"))
+            {
+                using var img = Image.FromFile("doodle_bg.png");
+                var bmp = new Bitmap(img.Width, img.Height);
+                using var g = Graphics.FromImage(bmp);
+
+                g.Clear(AppTheme.DarkBg);
+
+                var colorMatrix = new System.Drawing.Imaging.ColorMatrix { Matrix33 = 0.08f };
+                var imgAttributes = new System.Drawing.Imaging.ImageAttributes();
+                imgAttributes.SetColorMatrix(colorMatrix, System.Drawing.Imaging.ColorMatrixFlag.Default, System.Drawing.Imaging.ColorAdjustType.Bitmap);
+
+                g.DrawImage(img, new Rectangle(0, 0, bmp.Width, bmp.Height), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, imgAttributes);
+
+                this.BackgroundImage = bmp;
+                this.BackgroundImageLayout = ImageLayout.Tile;
+            }
+        }
+        catch { }
     }
 }

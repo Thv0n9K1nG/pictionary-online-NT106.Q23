@@ -28,12 +28,12 @@ public sealed class SplashForm : Form
         // --- PICTUREBOX HIỂN THỊ LOGO GAME ---
         var picLogo = new PictureBox
         {
-            Width = 400,
-            Height = 250,
-            Left = (Width - 400) / 2, // Căn giữa theo chiều ngang
-            Top = 40,                 // Cách cạnh trên 40px
+            Width = 450, // ĐÃ SỬA: Tăng chiều rộng Logo lên để nhìn to rõ hơn
+            Height = 280, // ĐÃ SỬA: Tăng chiều cao tương ứng
+            Left = (Width - 450) / 2, // Căn giữa theo chiều ngang
+            Top = 30,                 // Đẩy lên trên một chút cho cân đối
             SizeMode = PictureBoxSizeMode.Zoom, // Tự động co dãn ảnh giữ nguyên tỉ lệ
-            BackColor = Color.Transparent
+            BackColor = Color.Transparent // Để trong suốt lộ nền Doodle
         };
 
         // --- TỰ ĐỘNG QUÉT ĐƯỜNG DẪN ẢNH THÔNG MINH ---
@@ -47,7 +47,7 @@ public sealed class SplashForm : Form
             else
             {
                 // Dự phòng nếu lỡ tay xóa mất file ảnh ngoài đời thực
-                var lblFallback = new Label { Text = "🎨 PICTIONARY\nONLINE", Font = AppTheme.TitleFont, ForeColor = AppTheme.Primary, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter };
+                var lblFallback = new Label { Text = "🎨 PICTIONARY\nONLINE", Font = AppTheme.TitleFont, ForeColor = AppTheme.Primary, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, BackColor = Color.Transparent };
                 Controls.Add(lblFallback);
             }
         }
@@ -67,6 +67,9 @@ public sealed class SplashForm : Form
         _progressBar.Maximum = 100;
         _progressBar.Value = 0;
         Controls.Add(_progressBar);
+
+        // --- GỌI HÀM VẼ DOODLE CHO SPLASH FORM ---
+        SetupDoodleBackground();
 
         // --- TIMER ĐẾM GIỜ CHẠY ---
         _loadingTimer.Interval = 20;
@@ -88,5 +91,31 @@ public sealed class SplashForm : Form
         {
             _progressBar.Value = _progressValue;
         }
+    }
+
+    // HÀM TỰ ĐỘNG TẠO NỀN DOODLE ĐỒNG BỘ THEO MÀU THEME HỆ THỐNG
+    private void SetupDoodleBackground()
+    {
+        try
+        {
+            if (System.IO.File.Exists("doodle_bg.png"))
+            {
+                using var img = Image.FromFile("doodle_bg.png");
+                var bmp = new Bitmap(img.Width, img.Height);
+                using var g = Graphics.FromImage(bmp);
+
+                g.Clear(AppTheme.DarkBg);
+
+                var colorMatrix = new System.Drawing.Imaging.ColorMatrix { Matrix33 = 0.08f };
+                var imgAttributes = new System.Drawing.Imaging.ImageAttributes();
+                imgAttributes.SetColorMatrix(colorMatrix, System.Drawing.Imaging.ColorMatrixFlag.Default, System.Drawing.Imaging.ColorAdjustType.Bitmap);
+
+                g.DrawImage(img, new Rectangle(0, 0, bmp.Width, bmp.Height), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, imgAttributes);
+
+                this.BackgroundImage = bmp;
+                this.BackgroundImageLayout = ImageLayout.Tile;
+            }
+        }
+        catch { }
     }
 }

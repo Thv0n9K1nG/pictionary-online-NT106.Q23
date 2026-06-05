@@ -6,63 +6,69 @@ namespace Client.Utils;
 
 public static class AppTheme
 {
-	public static readonly Color Primary =
-		Color.FromArgb(124, 92, 255);
+    // Màu Primary (Nút Tạo, Vào) sang Xanh Cổ Vịt đậm cực kỳ sang trọng
+    public static readonly Color Primary =
+        Color.FromArgb(43, 140, 128);
 
-	public static readonly Color PrimaryDark =
-		Color.FromArgb(91, 61, 245);
+    public static readonly Color PrimaryDark =
+        Color.FromArgb(33, 110, 100);
 
-	public static readonly Color Success =
-		Color.FromArgb(46, 204, 113);
+    // Màu Danger (Nút Logout) sang Đỏ Coral/Hồng Cam mềm mại
+    public static readonly Color Danger =
+        Color.FromArgb(238, 108, 77);
 
-	public static readonly Color Danger =
-		Color.FromArgb(231, 76, 60);
+    // Màu Success (Nút Bắt đầu) sang Xanh Lục bảo nhẹ
+    public static readonly Color Success =
+        Color.FromArgb(82, 183, 136);
 
-	public static readonly Color Warning =
-		Color.FromArgb(243, 156, 18);
+    public static readonly Color Warning =
+        Color.FromArgb(243, 156, 18);
 
-    // Nền chính của Form (Màu Xanh lá từ Logo)
+    // Nền chính của Form (Màu Xanh Mint dịu mắt)
     public static readonly Color DarkBg =
-        Color.FromArgb(42, 75, 46);
+        Color.FromArgb(146, 227, 213);
 
-    // ĐÃ SỬA: Nền của các Khung (Panel), ListBox - Dùng màu xanh lá đậm hơn nền một chút để tạo độ sâu
+    // Nền của các Khung (Panel), TextBox, ListBox - Màu Trắng tinh khôi
     public static readonly Color PanelBg =
-        Color.FromArgb(30, 55, 33);
+        Color.White;
 
-    // ĐÃ SỬA: Màu Viền (Border) - Dùng màu xanh lá sáng hơn để tạo điểm nhấn
+    // Màu Viền (Border) - Xanh Mint đậm hơn một xíu để kẻ viền
     public static readonly Color Border =
-        Color.FromArgb(60, 100, 65);
+        Color.FromArgb(115, 205, 195);
 
+    // Chữ chính màu Xám Đậm
     public static readonly Color Text =
-		Color.White;
+        Color.FromArgb(85, 95, 105);
 
-	public static readonly Color SubText =
-		Color.FromArgb(160, 174, 192);
+    // Chữ phụ màu Xám Nhạt
+    public static readonly Color SubText =
+        Color.FromArgb(150, 160, 170);
 
-	public static Font TitleFont =>
-		new("Segoe UI", 18, FontStyle.Bold);
+    // GIỮ NGUYÊN: Phông chữ Segoe UI mặc định
+    public static Font TitleFont =>
+        new("Segoe UI", 18, FontStyle.Bold);
 
-	public static Font HeaderFont =>
-		new("Segoe UI", 12, FontStyle.Bold);
+    public static Font HeaderFont =>
+        new("Segoe UI", 12, FontStyle.Bold);
 
-	public static Font NormalFont =>
-		new("Segoe UI", 10);
+    public static Font NormalFont =>
+        new("Segoe UI", 10);
 
-	public static void ApplyDarkForm(Form form)
-	{
-        form.BackColor = Color.FromArgb(42, 75, 46);// Đổi sang màu xanh
+    public static void ApplyDarkForm(Form form)
+    {
+        form.BackColor = DarkBg;
         form.ForeColor = Text;
-	}
+    }
+
     public static void ApplyCornerLogo(Form form, string corner = "TopLeft")
     {
         var picCornerLogo = new PictureBox
         {
-            Size = new Size(90, 55), // Kích thước logo thu nhỏ ở góc
+            Size = new Size(90, 55),
             SizeMode = PictureBoxSizeMode.Zoom,
             BackColor = Color.Transparent
         };
 
-        // Load ảnh tương đối từ thư mục gốc (đã cấu hình từ bước trước)
         try
         {
             if (System.IO.File.Exists("logo.png"))
@@ -70,9 +76,8 @@ public static class AppTheme
                 picCornerLogo.Image = Image.FromFile("logo.png");
             }
         }
-        catch { /* Bỏ qua nếu lỗi */ }
+        catch { }
 
-        // Tính toán vị trí dựa theo góc bạn chọn
         switch (corner)
         {
             case "TopLeft":
@@ -82,7 +87,6 @@ public static class AppTheme
                 break;
 
             case "TopRight":
-                // Cách cạnh phải 60px (để tránh đè vào nút Exit của Siticone thường cách 40-50px)
                 picCornerLogo.Left = form.Width - picCornerLogo.Width - 60;
                 picCornerLogo.Top = 10;
                 picCornerLogo.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -101,80 +105,97 @@ public static class AppTheme
                 break;
         }
 
-        // Add vào form
         form.Controls.Add(picCornerLogo);
-
-        // MẸO WINFORMS: Ép logo luôn nổi lên trên cùng, không bị các Panel hay Background đè mất
         picCornerLogo.BringToFront();
     }
-    public static void StylePrimaryButton(
-		SiticoneButton btn)
-	{
-		btn.FillColor = Primary;
-		btn.ForeColor = Text;
-		btn.BorderRadius = 8;
-		btn.Font = HeaderFont;
-	}
 
-	public static void StyleSuccessButton(
-		SiticoneButton btn)
-	{
-		btn.FillColor = Success;
-		btn.ForeColor = Text;
-		btn.BorderRadius = 8;
-		btn.Font = HeaderFont;
-	}
+    // ==========================================
+    // KHU VỰC STYLE ĐÃ FIX LỖI VIỀN & HOVER CHỮ
+    // ==========================================
 
-	public static void StyleDangerButton(
-		SiticoneButton btn)
-	{
-		btn.FillColor = Danger;
-		btn.ForeColor = Text;
-		btn.BorderRadius = 8;
-		btn.Font = HeaderFont;
-	}
+    public static void StylePrimaryButton(SiticoneButton btn)
+    {
+        btn.FillColor = Primary;
+        btn.ForeColor = Color.White;
+        btn.HoverState.ForeColor = Color.White; // Giữ chữ trắng khi hover
+        btn.BorderRadius = 8;
+        btn.Font = HeaderFont;
+        btn.UseTransparentBackground = true;
+    }
 
-	public static void StyleTextBox(
-		SiticoneTextBox box)
-	{
-		box.FillColor = PanelBg;
-		box.ForeColor = Text;
-		box.BorderColor = Border;
-		box.BorderRadius = 8;
-	}
+    public static void StyleSuccessButton(SiticoneButton btn)
+    {
+        btn.FillColor = Success;
+        btn.ForeColor = Color.White;
+        btn.HoverState.ForeColor = Color.White; // Giữ chữ trắng khi hover
+        btn.BorderRadius = 8;
+        btn.Font = HeaderFont;
+        btn.UseTransparentBackground = true;
+    }
 
-	public static void StylePanel(
-		SiticonePanel panel)
-	{
-		panel.FillColor = PanelBg;
-		panel.BorderColor = Border;
-		panel.BorderThickness = 1;
-		panel.BorderRadius = 10;
-	}
+    public static void StyleDangerButton(SiticoneButton btn)
+    {
+        btn.FillColor = Danger;
+        btn.ForeColor = Color.White;
+        btn.HoverState.ForeColor = Color.White; // Giữ chữ trắng khi hover
+        btn.BorderRadius = 8;
+        btn.Font = HeaderFont;
+        btn.UseTransparentBackground = true;
+    }
 
-	public static void StyleLabel(
-		Label lbl)
-	{
-		lbl.ForeColor = Text;
-		lbl.Font = NormalFont;
-	}
+    // Nút phụ (Dùng cho nút "Làm mới")
+    public static void StyleSecondaryButton(SiticoneButton btn)
+    {
+        btn.FillColor = Border;
+        btn.ForeColor = Color.White;
+        btn.HoverState.ForeColor = Color.White;
+        btn.BorderRadius = 8;
+        btn.Font = HeaderFont;
+        btn.UseTransparentBackground = true;
+    }
 
-	public static void StyleListBox(
-		ListBox list)
-	{
-		list.BackColor = PanelBg;
-		list.ForeColor = Text;
-		list.BorderStyle = BorderStyle.None;
-		list.Font = NormalFont;
-	}
+    public static void StyleTextBox(SiticoneTextBox box)
+    {
+        box.FillColor = PanelBg;
+        box.ForeColor = Text;
+        box.BorderColor = Border;
+        box.BorderRadius = 8;
+        box.PlaceholderForeColor = SubText; // Làm rõ chữ gợi ý
+        box.BackColor = Color.Transparent;  // Fix viền trắng ở 4 góc bo
+    }
 
-	public static void StyleListView(
-		ListView list)
-	{
-		list.BackColor = PanelBg;
-		list.ForeColor = Text;
-		list.BorderStyle = BorderStyle.None;
-		list.GridLines = false;
-		list.Font = NormalFont;
-	}
+    public static void StylePanel(SiticonePanel panel)
+    {
+        panel.FillColor = PanelBg;
+        panel.BorderColor = Border;
+        panel.BorderThickness = 1;
+        panel.BorderRadius = 10;
+        panel.BackColor = Color.Transparent; // Fix viền trắng ở 4 góc bo
+        panel.UseTransparentBackground = true;
+    }
+
+    public static void StyleLabel(Label lbl)
+    {
+        lbl.ForeColor = Text;
+        lbl.Font = NormalFont;
+        lbl.BackColor = Color.Transparent;
+        lbl.UseCompatibleTextRendering = true; // Fix nét chữ bị răng cưa
+    }
+
+    public static void StyleListBox(ListBox list)
+    {
+        list.BackColor = PanelBg;
+        list.ForeColor = Text;
+        list.BorderStyle = BorderStyle.None;
+        list.Font = NormalFont;
+    }
+
+    public static void StyleListView(ListView list)
+    {
+        list.BackColor = PanelBg;
+        list.ForeColor = Text;
+        list.BorderStyle = BorderStyle.None;
+        list.GridLines = false;
+        list.Font = NormalFont;
+    }
 }
