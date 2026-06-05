@@ -51,6 +51,23 @@ public sealed class RoomManager
         return room;
     }
 
+    public LeaveRoomResult LeaveRoom(string roomCode, string playerId)
+    {
+        if (!_rooms.TryGetValue(roomCode, out var room))
+        {
+            return new LeaveRoomResult(roomCode, true, null, []);
+        }
+
+        var result = room.RemovePlayer(playerId);
+        if (result.RoomDeleted)
+        {
+            _rooms.TryRemove(roomCode, out _);
+            return new LeaveRoomResult(roomCode, true, null, []);
+        }
+
+        return new LeaveRoomResult(roomCode, false, room, result.Players);
+    }
+
     public async Task<RoundStartResult> ReadyAsync(string roomCode, string playerId, CancellationToken cancellationToken)
     {
         var room = GetRoom(roomCode);
@@ -182,4 +199,10 @@ public sealed class RoomManager
         GameRoom Room,
         string MaskedWord,
         IReadOnlyList<string> GuesserSessionIds);
+
+    public sealed record LeaveRoomResult(
+        string RoomCode,
+        bool RoomDeleted,
+        GameRoom? Room,
+        IReadOnlyList<PlayerInfo> Players);
 }

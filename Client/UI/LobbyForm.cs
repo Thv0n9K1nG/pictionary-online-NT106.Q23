@@ -19,6 +19,7 @@ public sealed class LobbyForm : Form
     private readonly MessageDispatcher _dispatcher;
     private bool _gameOpened;
     private bool _roomListRequestedOnShown;
+    private bool _loggingOut;
 
     private readonly ListBox _roomList = new();
     private readonly ListBox _playerList = new();
@@ -84,6 +85,9 @@ public sealed class LobbyForm : Form
         var joinButton = new SiticoneButton { Text = "Vào", Left = 550, Top = 65, Width = 90, Height = 40, Cursor = Cursors.Hand };
         AppTheme.StylePrimaryButton(joinButton);
 
+        var logoutButton = new SiticoneButton { Text = "Logout", Left = 650, Top = 65, Width = 100, Height = 40, Cursor = Cursors.Hand };
+        AppTheme.StyleDangerButton(logoutButton);
+
         _statusLabel.Left = 20; _statusLabel.Top = 120; _statusLabel.Width = 800;
         _statusLabel.Text = "Chào mừng bạn đến với xưởng vẽ!";
         AppTheme.StyleLabel(_statusLabel);
@@ -123,6 +127,7 @@ public sealed class LobbyForm : Form
         createButton.Click += async (_, _) => await SendCreateRoomAsync();
         refreshButton.Click += async (_, _) => await RefreshRoomListAsync();
         joinButton.Click += async (_, _) => await SendJoinRoomAsync();
+        logoutButton.Click += async (_, _) => await SendLogoutAsync();
         openGameButton.Click += (_, _) => OpenGame();
         _roomList.DoubleClick += async (_, _) => { if (_roomList.SelectedItem is RoomInfo room) { _roomCodeInput.Text = room.RoomCode; await SendJoinRoomAsync(); } };
         _socketService.MessageReceived += OnMessageReceived;
@@ -131,7 +136,7 @@ public sealed class LobbyForm : Form
 
         Controls.Add(exitButton); Controls.Add(title); Controls.Add(createButton); Controls.Add(refreshButton);
         Controls.Add(joinLabel); Controls.Add(_roomCodeInput); Controls.Add(joinButton); Controls.Add(_statusLabel);
-        Controls.Add(roomLabel); Controls.Add(roomPanel); Controls.Add(playerLabel); Controls.Add(playerPanel); Controls.Add(openGameButton);
+        Controls.Add(logoutButton); Controls.Add(roomLabel); Controls.Add(roomPanel); Controls.Add(playerLabel); Controls.Add(playerPanel); Controls.Add(openGameButton);
 
         // --- LOAD VÀ XỬ LÝ ẢNH NỀN ---
         SetupDoodleBackground();
@@ -139,6 +144,38 @@ public sealed class LobbyForm : Form
         void SetOpenGameButtonState() { openGameButton.Enabled = !string.IsNullOrWhiteSpace(_state.RoomCode); }
         async Task SendCreateRoomAsync() { if (!EnsureLoggedIn()) return; _statusLabel.Text = "Đang tạo phòng..."; await _socketService.SendAsync(GameMessageFactory.CreateRoom(GetPlayerName(), _state.SessionId!)); }
         async Task SendJoinRoomAsync() { if (!EnsureLoggedIn()) return; var roomCode = _roomCodeInput.Text.Trim().ToUpperInvariant(); if (string.IsNullOrWhiteSpace(roomCode)) { _statusLabel.Text = "Hãy nhập mã phòng trước."; _statusLabel.ForeColor = AppTheme.Danger; return; } _statusLabel.Text = $"Đang vào phòng {roomCode}..."; await _socketService.SendAsync(GameMessageFactory.JoinRoom(roomCode, GetPlayerName(), _state.SessionId!)); }
+        async Task SendLogoutAsync()
+        {
+            if (_loggingOut)
+            {
+                return;
+            }
+
+            _loggingOut = true;
+            logoutButton.Enabled = false;
+            _statusLabel.Text = "Đang đăng xuất...";
+            _statusLabel.ForeColor = AppTheme.Warning;
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(_state.SessionId))
+                {
+                    await _socketService.SendAsync(GameMessageFactory.Logout(_state.SessionId));
+                }
+            }
+            catch (Exception ex)
+            {
+                _statusLabel.Text = $"Đăng xuất thất bại: {ex.Message}";
+                _statusLabel.ForeColor = AppTheme.Danger;
+                _loggingOut = false;
+                logoutButton.Enabled = true;
+                return;
+            }
+
+            _state.ClearSession();
+            Close();
+        }
+
         async Task RefreshRoomListOnFirstShowAsync()
         {
             if (_roomListRequestedOnShown)

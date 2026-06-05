@@ -50,6 +50,9 @@ public sealed class GatewayHandler
             case InternalMessageType.RestoreRoomFromCheckpoint:
                 await HandleRestoreRoomFromCheckpointAsync(payload, stream, cancellationToken);
                 break;
+            case InternalMessageType.LeaveRoom:
+                await HandleLeaveRoomAsync(payload, stream, cancellationToken);
+                break;
             default:
                 Console.WriteLine($"[GameServer:{_serverId}] Internal message {type} is not handled.");
                 break;
@@ -129,6 +132,41 @@ public sealed class GatewayHandler
         await SendRoomResponseAsync(requestId, room, stream, cancellationToken);
         await SendCheckpointAsync(room, stream, cancellationToken);
         Console.WriteLine($"[GameServer:{_serverId}] Player {playerId} joined room {room.RoomCode}.");
+    }
+
+    private async Task HandleLeaveRoomAsync(JsonElement payload, NetworkStream stream, CancellationToken cancellationToken)
+    {
+        var requestId = ReadString(payload, "requestId");
+        try
+        {
+            var roomCode = ReadString(payload, "roomCode")?.Trim().ToUpperInvariant()
+                ?? throw new InvalidOperationException("Missing roomCode.");
+            var playerId = ReadString(payload, "playerId") ?? throw new InvalidOperationException("Missing playerId.");
+
+            var result = _roomManager.LeaveRoom(roomCode, playerId);
+            var roomInfo = result.Room is null ? null : RoomManager.ToRoomInfo(result.Room);
+
+            await _sendInternalAsync(stream, InternalMessageType.ServerEvent, new
+            {
+                requestId,
+                success = true,
+                roomCode,
+                roomDeleted = result.RoomDeleted,
+                roomInfo,
+                players = result.Players
+            }, cancellationToken);
+
+            if (result.Room is not null)
+            {
+                await SendCheckpointAsync(result.Room, stream, cancellationToken);
+            }
+
+            Console.WriteLine($"[GameServer:{_serverId}] Player {playerId} left room {roomCode}.");
+        }
+        catch (Exception ex)
+        {
+            await SendFailureAsync(requestId, ex.Message, stream, cancellationToken);
+        }
     }
 
     private async Task HandleReadyAsync(

@@ -1,4 +1,4 @@
-﻿using Shared.Enums;
+using Shared.Enums;
 using Shared.Models;
 using System;
 using System.Collections.Generic;
@@ -42,5 +42,20 @@ public sealed class ClientState
     public void TriggerDrawDataReceived(Shared.Models.DrawPayload payload)
     {
         OnDrawDataReceived?.Invoke(payload);
+    }
+
+    public void ClearSession()
+    {
+        SessionId = null;
+        PlayerId = null;
+        Username = null;
+        RoomCode = null;
+        CurrentGameState = GameState.Waiting;
+        IsDrawer = false;
+        CurrentScore = 0;
+        PlayerList.Clear();
+        RoomList.Clear();
+        LatestTimerValue = 0;
+        LastErrorMessage = null;
     }
 }

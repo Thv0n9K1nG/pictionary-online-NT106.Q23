@@ -100,6 +100,52 @@ public sealed class GameRoom
         }
     }
 
+    public LeavePlayerResult RemovePlayer(string playerId)
+    {
+        lock (_syncRoot)
+        {
+            var index = _players.FindIndex(player => player.PlayerId == playerId);
+            if (index < 0)
+            {
+                return new LeavePlayerResult(false, _players.Count == 0, PlayersWithDrawerFlag());
+            }
+
+            var removed = _players[index];
+            _players.RemoveAt(index);
+            _sessionByPlayerId.Remove(playerId);
+            _correctGuessers.Remove(playerId);
+            _drawScores.Remove(playerId);
+            _guessScores.Remove(playerId);
+            _correctGuessCounts.Remove(playerId);
+
+            if (CurrentDrawerId == playerId)
+            {
+                CurrentDrawerId = null;
+                _drawerIndex = -1;
+            }
+            else if (_drawerIndex > index)
+            {
+                _drawerIndex--;
+            }
+
+            if (_players.Count == 0)
+            {
+                State = GameState.GameOver;
+                return new LeavePlayerResult(removed.IsHost, true, []);
+            }
+
+            if (removed.IsHost)
+            {
+                for (var i = 0; i < _players.Count; i++)
+                {
+                    _players[i] = _players[i] with { IsHost = i == 0 };
+                }
+            }
+
+            return new LeavePlayerResult(removed.IsHost, false, PlayersWithDrawerFlag());
+        }
+    }
+
     public RoomSnapshot ToSnapshot(long version)
     {
         lock (_syncRoot)
@@ -427,5 +473,10 @@ public sealed class GameRoom
     public sealed record RoundEndResult(
         bool RoundEnded,
         bool GameEnded,
+        IReadOnlyList<PlayerInfo> Players);
+
+    public sealed record LeavePlayerResult(
+        bool RemovedHost,
+        bool RoomDeleted,
         IReadOnlyList<PlayerInfo> Players);
 }

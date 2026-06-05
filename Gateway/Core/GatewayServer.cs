@@ -7,6 +7,7 @@ using Gateway.Handlers;
 using Gateway.Managers;
 using Gateway.Security;
 using Gateway.Services;
+using Shared.Enums;
 using Shared.Models;
 
 namespace Gateway.Core;
@@ -268,6 +269,13 @@ public sealed class GatewayServer
         foreach (var client in targets)
         {
             await client.SendAsync(message, cancellationToken);
+        }
+
+        if (message.Type == MessageType.GameEnd)
+        {
+            _sessionDirectory.ClearRoom(roomCode);
+            _clientConnections.RemoveRoom(roomCode);
+            _roomDirectory.Remove(roomCode);
         }
     }
 

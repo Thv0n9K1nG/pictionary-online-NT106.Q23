@@ -1,4 +1,4 @@
-﻿using Shared.Enums;
+using Shared.Enums;
 using Shared.Models;
 
 namespace Client.Services;
@@ -47,6 +47,15 @@ public static class GameMessageFactory
         {
             Type = MessageType.GetRoomList,
             Payload = new { }
+        };
+    }
+
+    public static GameMessage Logout(string sessionId)
+    {
+        return new GameMessage
+        {
+            Type = MessageType.Logout,
+            Payload = new { sessionId }
         };
     }
 

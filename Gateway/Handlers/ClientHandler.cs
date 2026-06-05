@@ -163,6 +163,9 @@ public sealed class ClientHandler
                 case MessageType.Reconnect:
                     await HandleReconnectAsync(message, cancellationToken);
                     break;
+                case MessageType.Logout:
+                    await HandleLogoutAsync(message, cancellationToken);
+                    break;
                 case MessageType.GetMatchHistory:
                     await HandleGetMatchHistoryAsync(message, cancellationToken);
                     break;
@@ -277,12 +280,27 @@ public sealed class ClientHandler
             ?? ReadStringFromPayload(message.Payload, "username")
             ?? resolvedSession.UserId;
 
-        var response = await gameServer.SendInternalRequestAsync(
-            InternalMessageType.CreateRoomOnNode,
-            new { sessionId, playerId = resolvedSession.PlayerId, playerName },
-            cancellationToken);
+        if (!_sessionDirectory.TryBeginRoomOperation(resolvedSession.PlayerId, out var membershipError))
+        {
+            await SendAsync(CreateError(MessageType.Error, membershipError), cancellationToken);
+            return;
+        }
 
-        await ApplyRoomResponseAsync(response, sessionId, selectedServer.ServerId, isCreateRoom: true, cancellationToken);
+        try
+        {
+            await LeaveExistingRoomsForPlayerAsync(resolvedSession.PlayerId, excludeRoomCode: null, cancellationToken);
+
+            var response = await gameServer.SendInternalRequestAsync(
+                InternalMessageType.CreateRoomOnNode,
+                new { sessionId, playerId = resolvedSession.PlayerId, playerName },
+                cancellationToken);
+
+            await ApplyRoomResponseAsync(response, sessionId, selectedServer.ServerId, isCreateRoom: true, cancellationToken);
+        }
+        finally
+        {
+            _sessionDirectory.EndRoomOperation(resolvedSession.PlayerId);
+        }
     }
 
     private async Task HandleJoinRoomAsync(GameMessage message, CancellationToken cancellationToken)
@@ -319,20 +337,43 @@ public sealed class ClientHandler
         var playerName = ReadStringFromPayload(message.Payload, "playerName")
             ?? ReadStringFromPayload(message.Payload, "username")
             ?? resolvedSession.UserId;
+        var alreadyInTargetRoom = _sessionDirectory.GetRoomMembershipsForPlayer(resolvedSession.PlayerId)
+            .Any(membership => string.Equals(membership.RoomCode, roomCode, StringComparison.OrdinalIgnoreCase));
 
-        var response = await gameServer.SendInternalRequestAsync(
-            InternalMessageType.ForwardClientMessage,
-            new
-            {
-                roomCode,
+        if (!_sessionDirectory.TryBeginRoomOperation(resolvedSession.PlayerId, out var membershipError))
+        {
+            await SendAsync(CreateError(MessageType.Error, membershipError), cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await LeaveExistingRoomsForPlayerAsync(resolvedSession.PlayerId, excludeRoomCode: roomCode, cancellationToken);
+
+            var response = await gameServer.SendInternalRequestAsync(
+                InternalMessageType.ForwardClientMessage,
+                new
+                {
+                    roomCode,
+                    sessionId,
+                    playerId = resolvedSession.PlayerId,
+                    playerName,
+                    innerMessage = message
+                },
+                cancellationToken);
+
+            await ApplyRoomResponseAsync(
+                response,
                 sessionId,
-                playerId = resolvedSession.PlayerId,
-                playerName,
-                innerMessage = message
-            },
-            cancellationToken);
-
-        await ApplyRoomResponseAsync(response, sessionId, ownerServerId, isCreateRoom: false, cancellationToken);
+                ownerServerId,
+                isCreateRoom: false,
+                cancellationToken: cancellationToken,
+                countPlayerJoin: !alreadyInTargetRoom);
+        }
+        finally
+        {
+            _sessionDirectory.EndRoomOperation(resolvedSession.PlayerId);
+        }
     }
 
     private async Task HandleGetRoomListAsync(CancellationToken cancellationToken)
@@ -381,6 +422,40 @@ public sealed class ClientHandler
             Type = MessageType.RoomRecovered,
             Payload = new { roomCode = (string?)null }
         }, cancellationToken);
+    }
+
+    private async Task HandleLogoutAsync(GameMessage message, CancellationToken cancellationToken)
+    {
+        if (!TryResolveSession(message.Payload, out var session, out var sessionId, out var error))
+        {
+            await SendAsync(CreateError(MessageType.Error, error), cancellationToken);
+            return;
+        }
+
+        var resolvedSession = session!;
+        if (!_sessionDirectory.TryBeginRoomOperation(resolvedSession.PlayerId, out var membershipError))
+        {
+            await SendAsync(CreateError(MessageType.Error, membershipError), cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await LeaveExistingRoomsForPlayerAsync(resolvedSession.PlayerId, excludeRoomCode: null, cancellationToken);
+            _sessionDirectory.Remove(sessionId);
+            _clientConnections?.RemoveSession(sessionId);
+            _currentSessionId = null;
+
+            await SendAsync(new GameMessage
+            {
+                Type = MessageType.LogoutSuccess,
+                Payload = new { message = "Logout successful." }
+            }, cancellationToken);
+        }
+        finally
+        {
+            _sessionDirectory.EndRoomOperation(resolvedSession.PlayerId);
+        }
     }
 
     private async Task HandleGetMatchHistoryAsync(GameMessage message, CancellationToken cancellationToken)
@@ -459,12 +534,143 @@ public sealed class ClientHandler
         }
     }
 
+    private async Task LeaveExistingRoomsForPlayerAsync(
+        string playerId,
+        string? excludeRoomCode,
+        CancellationToken cancellationToken)
+    {
+        if (_gameServerConnections is null || _roomDirectory is null)
+        {
+            return;
+        }
+
+        var membershipsByRoom = _sessionDirectory.GetRoomMembershipsForPlayer(playerId)
+            .Select(membership => new
+            {
+                SessionId = membership.SessionId,
+                RoomCode = membership.RoomCode?.Trim().ToUpperInvariant()
+            })
+            .Where(membership => !string.IsNullOrWhiteSpace(membership.RoomCode))
+            .GroupBy(membership => membership.RoomCode!, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var roomMemberships in membershipsByRoom)
+        {
+            var roomCode = roomMemberships.Key;
+            if (string.IsNullOrWhiteSpace(roomCode))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(excludeRoomCode) &&
+                string.Equals(roomCode, excludeRoomCode, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var sessionIds = roomMemberships
+                .Select(membership => membership.SessionId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (!_roomDirectory.TryGetOwner(roomCode, out var ownerServerId) ||
+                string.IsNullOrWhiteSpace(ownerServerId) ||
+                !_gameServerConnections.TryGet(ownerServerId, out var gameServer) ||
+                gameServer is null)
+            {
+                foreach (var sessionId in sessionIds)
+                {
+                    _sessionDirectory.SetRoom(sessionId, null);
+                    _clientConnections?.LeaveRoom(roomCode, sessionId);
+                }
+                continue;
+            }
+
+            var response = await gameServer.SendInternalRequestAsync(
+                InternalMessageType.LeaveRoom,
+                new
+                {
+                    roomCode,
+                    sessionId = sessionIds.FirstOrDefault(),
+                    playerId
+                },
+                cancellationToken);
+
+            await ApplyLeaveRoomResponseAsync(response, sessionIds, ownerServerId, cancellationToken);
+        }
+    }
+
+    private async Task ApplyLeaveRoomResponseAsync(
+        JsonElement response,
+        IReadOnlyList<string> sessionIds,
+        string ownerServerId,
+        CancellationToken cancellationToken)
+    {
+        var success = ReadBoolProperty(response, "success", false);
+        if (!success)
+        {
+            throw new InvalidOperationException(ReadStringProperty(response, "error") ?? "Leave room failed.");
+        }
+
+        var roomCode = ReadStringProperty(response, "roomCode")?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(roomCode))
+        {
+            return;
+        }
+
+        var roomDeleted = ReadBoolProperty(response, "roomDeleted", false);
+        if (roomDeleted)
+        {
+            _roomDirectory?.Remove(roomCode);
+            _sessionDirectory.ClearRoom(roomCode);
+            _clientConnections?.RemoveRoom(roomCode);
+            _nodeRegistry?.AdjustLoad(ownerServerId, -1, -1);
+            return;
+        }
+
+        foreach (var sessionId in sessionIds)
+        {
+            _sessionDirectory.SetRoom(sessionId, null);
+            _clientConnections?.LeaveRoom(roomCode, sessionId);
+        }
+
+        _nodeRegistry?.AdjustLoad(ownerServerId, 0, -1);
+
+        if (TryGetPropertyIgnoreCase(response, "roomInfo", out var roomInfoElement) &&
+            roomInfoElement.ValueKind != JsonValueKind.Null)
+        {
+            var roomInfo = roomInfoElement.Deserialize<RoomInfo>(RoomJsonOptions);
+            if (roomInfo is not null)
+            {
+                _roomDirectory?.UpsertRoom(roomInfo);
+            }
+        }
+
+        if (TryGetPropertyIgnoreCase(response, "players", out var playersElement))
+        {
+            var playerListMessage = new GameMessage
+            {
+                Type = MessageType.PlayerList,
+                Payload = new { roomCode, players = playersElement.Clone() }
+            };
+
+            if (_clientConnections is not null)
+            {
+                foreach (var client in _clientConnections.GetRoomClients(roomCode))
+                {
+                    await client.SendAsync(playerListMessage, cancellationToken);
+                }
+            }
+        }
+    }
+
     private async Task ApplyRoomResponseAsync(
         JsonElement response,
         string sessionId,
         string ownerServerId,
         bool isCreateRoom,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool countPlayerJoin = true)
     {
         var success = ReadBoolProperty(response, "success", false);
         if (!success)
@@ -502,7 +708,7 @@ public sealed class ClientHandler
             _sessionDirectory.Set(session with { RoomCode = roomCode });
         }
 
-        _nodeRegistry?.AdjustLoad(ownerServerId, isCreateRoom ? 1 : 0, 1);
+        _nodeRegistry?.AdjustLoad(ownerServerId, isCreateRoom ? 1 : 0, countPlayerJoin ? 1 : 0);
 
         await SendAsync(new GameMessage
         {

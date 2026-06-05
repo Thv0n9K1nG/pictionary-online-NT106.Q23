@@ -1,4 +1,4 @@
-﻿namespace Shared.Protocol;
+namespace Shared.Protocol;
 
 public enum InternalMessageType
 {
@@ -11,5 +11,6 @@ public enum InternalMessageType
     RoomCheckpoint,
     RestoreRoomFromCheckpoint,
     RoomRestored,
-    MatchResult
+    MatchResult,
+    LeaveRoom
 }

@@ -46,4 +46,10 @@ public sealed class RoomDirectory
             .OrderBy(room => room.RoomCode)
             .ToList();
     }
+
+    public void Remove(string roomCode)
+    {
+        _rooms.TryRemove(roomCode, out _);
+        _roomOwners.TryRemove(roomCode, out _);
+    }
 }
