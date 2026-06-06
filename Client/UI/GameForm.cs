@@ -339,8 +339,24 @@ public sealed class GameForm : Form
         _txtGuess.Enabled = !_state.IsDrawer && _state.CurrentGameState == GameState.Drawing;
         _btnSend.Enabled = _txtGuess.Enabled;
 
-        _btnReady.Enabled = (_state.CurrentGameState is GameState.Waiting or GameState.RoundEnd) &&
-                            !string.IsNullOrWhiteSpace(_state.RoomCode) && !string.IsNullOrWhiteSpace(_state.SessionId);
+        var currentPlayer = _state.PlayerList.FirstOrDefault(player => player.PlayerId == _state.PlayerId);
+        var currentPlayerReady = currentPlayer?.IsReady == true;
+        var canReady = (_state.CurrentGameState is GameState.Waiting or GameState.RoundEnd) &&
+                       !string.IsNullOrWhiteSpace(_state.RoomCode) &&
+                       !string.IsNullOrWhiteSpace(_state.SessionId);
+
+        _btnReady.Enabled = canReady && !currentPlayerReady;
+        if (canReady && currentPlayerReady)
+        {
+            _btnReady.Text = "ĐÃ SẴN SÀNG";
+            _btnReady.FillColor = AppTheme.Border;
+            _btnReady.ForeColor = AppTheme.SubText;
+        }
+        else if (canReady)
+        {
+            _btnReady.Text = "SẴN SÀNG";
+            AppTheme.StyleSuccessButton(_btnReady);
+        }
 
         toolbarPanel.Visible = _state.IsDrawer;
 
@@ -473,7 +489,7 @@ public sealed class GameForm : Form
         if (!EnsureGameplayContext()) return;
         await _socketService.SendAsync(GameMessageFactory.Ready(_state.RoomCode!, _state.SessionId!));
         _btnReady.Enabled = false;
-        _btnReady.Text = "ĐANG CHỜ MỌI NGƯỜI...";
+        _btnReady.Text = "ĐÃ SẴN SÀNG";
         _btnReady.FillColor = AppTheme.Border;
         _btnReady.ForeColor = AppTheme.SubText;
     }
@@ -507,6 +523,7 @@ public sealed class GameForm : Form
             string name = p.DisplayName;
             if (p.IsHost) name = "👑 " + name;
             if (p.IsDrawer) name = "🖌️ " + name;
+            if (p.IsReady) name += " ✓";
 
             var item = new ListViewItem(name);
             item.SubItems.Add(p.Score.ToString());

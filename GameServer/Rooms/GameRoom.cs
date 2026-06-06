@@ -212,16 +212,10 @@ public sealed class GameRoom
         return room;
     }
 
-    public IReadOnlyList<PlayerInfo> StartSelectingWords(string hostPlayerId, IReadOnlyList<string> wordOptions)
+    public ReadyResult MarkReady(string playerId, IReadOnlyList<string> wordOptions)
     {
         lock (_syncRoot)
         {
-            var host = _players.FirstOrDefault(player => player.IsHost);
-            if (host is null || host.PlayerId != hostPlayerId)
-            {
-                throw new InvalidOperationException("Only host can start the game.");
-            }
-
             if (_players.Count < 2)
             {
                 throw new InvalidOperationException("At least 2 players are required.");
@@ -238,6 +232,18 @@ public sealed class GameRoom
                 throw new InvalidOperationException("Game is already over.");
             }
 
+            var readyIndex = _players.FindIndex(player => player.PlayerId == playerId);
+            if (readyIndex < 0)
+            {
+                throw new InvalidOperationException("Player is not in this room.");
+            }
+
+            _players[readyIndex] = _players[readyIndex] with { IsReady = true };
+            if (_players.Any(player => !player.IsReady))
+            {
+                return new ReadyResult(false, PlayersWithDrawerFlag());
+            }
+
             _drawerIndex = _drawerIndex < 0
                 ? Random.Shared.Next(_players.Count)
                 : (_drawerIndex + 1) % _players.Count;
@@ -246,6 +252,13 @@ public sealed class GameRoom
             CurrentWord = null;
             CurrentMaskedWord = null;
             WordOptions = wordOptions.ToList();
+            var readyPlayers = PlayersWithDrawerFlag();
+
+            for (var i = 0; i < _players.Count; i++)
+            {
+                _players[i] = _players[i] with { IsReady = false };
+            }
+
             RoundStartedAt = null;
             RoundEndsAt = null;
             _canvasCommands.Clear();
@@ -253,7 +266,7 @@ public sealed class GameRoom
             _revealedLetterIndexes.Clear();
             State = GameState.SelectingWord;
 
-            return PlayersWithDrawerFlag();
+            return new ReadyResult(true, readyPlayers);
         }
     }
 
@@ -478,5 +491,9 @@ public sealed class GameRoom
     public sealed record LeavePlayerResult(
         bool RemovedHost,
         bool RoomDeleted,
+        IReadOnlyList<PlayerInfo> Players);
+
+    public sealed record ReadyResult(
+        bool AllReady,
         IReadOnlyList<PlayerInfo> Players);
 }

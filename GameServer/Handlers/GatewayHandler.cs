@@ -182,6 +182,23 @@ public sealed class GatewayHandler
 
         await SendRoomEventAsync(roomCode, new GameMessage
         {
+            Type = MessageType.PlayerList,
+            Payload = new { roomCode, players = result.Players }
+        }, stream, cancellationToken);
+
+        if (!result.AllReady)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(result.DrawerId) || string.IsNullOrWhiteSpace(result.DrawerSessionId))
+        {
+            await SendFailureAsync(requestId, "Cannot start round without a drawer.", stream, cancellationToken);
+            return;
+        }
+
+        await SendRoomEventAsync(roomCode, new GameMessage
+        {
             Type = MessageType.GameStart,
             Payload = new
             {
@@ -190,12 +207,6 @@ public sealed class GatewayHandler
                 drawerId = result.DrawerId,
                 round = result.Room.CompletedRounds + 1
             }
-        }, stream, cancellationToken);
-
-        await SendRoomEventAsync(roomCode, new GameMessage
-        {
-            Type = MessageType.PlayerList,
-            Payload = new { roomCode, players = result.Players }
         }, stream, cancellationToken);
 
         await SendTargetedRoomEventAsync(roomCode, [result.DrawerSessionId], new GameMessage

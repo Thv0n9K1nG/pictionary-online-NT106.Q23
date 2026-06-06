@@ -239,7 +239,7 @@ public sealed class LobbyForm : Form
     }
 
     private void RenderRoomList() { _roomList.Items.Clear(); foreach (var room in _state.RoomList) _roomList.Items.Add(room); _roomList.DisplayMember = nameof(RoomInfo.RoomCode); }
-    private void RenderPlayerList() { _playerList.Items.Clear(); foreach (var player in _state.PlayerList) _playerList.Items.Add($"🎨 {player.DisplayName} (Điểm: {player.Score})"); }
+    private void RenderPlayerList() { _playerList.Items.Clear(); foreach (var player in _state.PlayerList) _playerList.Items.Add($"🎨 {player.DisplayName} (Điểm: {player.Score}){(player.IsReady ? " - Sẵn sàng" : string.Empty)}"); }
 
     private void SetupDoodleBackground()
     {

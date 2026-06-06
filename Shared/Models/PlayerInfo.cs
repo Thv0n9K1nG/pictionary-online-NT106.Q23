@@ -6,5 +6,6 @@ public sealed record PlayerInfo(
     int Score,
     bool IsHost,
     bool IsConnected,
-    bool IsDrawer
+    bool IsDrawer,
+    bool IsReady = false
 );

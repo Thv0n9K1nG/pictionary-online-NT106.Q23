@@ -72,9 +72,15 @@ public sealed class RoomManager
     {
         var room = GetRoom(roomCode);
         var words = await _gameEngine.GetWordOptionsAsync(cancellationToken);
-        var players = room.StartSelectingWords(playerId, words);
+        var ready = room.MarkReady(playerId, words);
 
-        return new RoundStartResult(room, players, words, room.CurrentDrawerId!, room.CurrentDrawerSessionId!);
+        return new RoundStartResult(
+            room,
+            ready.Players,
+            ready.AllReady,
+            words,
+            room.CurrentDrawerId,
+            room.CurrentDrawerSessionId);
     }
 
     public async Task<WordSelectedResult> SelectWordAsync(
@@ -178,9 +184,10 @@ public sealed class RoomManager
     public sealed record RoundStartResult(
         GameRoom Room,
         IReadOnlyList<PlayerInfo> Players,
+        bool AllReady,
         IReadOnlyList<string> Words,
-        string DrawerId,
-        string DrawerSessionId);
+        string? DrawerId,
+        string? DrawerSessionId);
 
     public sealed record WordSelectedResult(
         GameRoom Room,
