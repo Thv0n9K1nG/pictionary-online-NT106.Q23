@@ -341,9 +341,10 @@ public sealed class LoginForm : Form
     {
         try
         {
-            if (System.IO.File.Exists("doodle_bg.png"))
+            var bgPath = AppTheme.TryGetAssetPath("doodle_bg.png");
+            if (!string.IsNullOrWhiteSpace(bgPath))
             {
-                using var img = Image.FromFile("doodle_bg.png");
+                using var img = Image.FromFile(bgPath);
                 var bmp = new Bitmap(img.Width, img.Height);
                 using var g = Graphics.FromImage(bmp);
 

@@ -245,10 +245,8 @@ public sealed class LobbyForm : Form
     {
         try
         {
-            string bgPath = "doodle_bg.png";
-            if (System.IO.File.Exists("doodle_bg.jpg")) bgPath = "doodle_bg.jpg";
-
-            if (!System.IO.File.Exists(bgPath)) return;
+            var bgPath = AppTheme.TryGetAssetPath("doodle_bg.png", "doodle_bg.jpg");
+            if (string.IsNullOrWhiteSpace(bgPath)) return;
 
             Image original = Image.FromFile(bgPath);
 

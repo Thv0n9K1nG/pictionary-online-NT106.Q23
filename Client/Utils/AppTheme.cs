@@ -60,6 +60,31 @@ public static class AppTheme
         form.ForeColor = Text;
     }
 
+    public static string? TryGetAssetPath(params string[] fileNames)
+    {
+        foreach (var fileName in fileNames)
+        {
+            foreach (var basePath in GetAssetSearchRoots())
+            {
+                var path = Path.GetFullPath(Path.Combine(basePath, fileName));
+                if (File.Exists(path))
+                {
+                    return path;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> GetAssetSearchRoots()
+    {
+        yield return AppContext.BaseDirectory;
+        yield return Directory.GetCurrentDirectory();
+        yield return Path.Combine(Directory.GetCurrentDirectory(), "Client");
+        yield return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+    }
+
     public static void ApplyCornerLogo(Form form, string corner = "TopLeft")
     {
         var picCornerLogo = new PictureBox
@@ -71,9 +96,10 @@ public static class AppTheme
 
         try
         {
-            if (System.IO.File.Exists("logo.png"))
+            var logoPath = TryGetAssetPath("logo.png");
+            if (!string.IsNullOrWhiteSpace(logoPath))
             {
-                picCornerLogo.Image = Image.FromFile("logo.png");
+                picCornerLogo.Image = Image.FromFile(logoPath);
             }
         }
         catch { }

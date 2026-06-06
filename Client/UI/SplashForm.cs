@@ -40,9 +40,10 @@ public sealed class SplashForm : Form
         try
         {
             // WinForms mặc định sẽ tự tìm ở thư mục chạy exe nếu truyền tên file trực tiếp
-            if (System.IO.File.Exists("logo.png"))
+            var logoPath = AppTheme.TryGetAssetPath("logo.png");
+            if (!string.IsNullOrWhiteSpace(logoPath))
             {
-                picLogo.Image = Image.FromFile("logo.png");
+                picLogo.Image = Image.FromFile(logoPath);
             }
             else
             {
@@ -98,9 +99,10 @@ public sealed class SplashForm : Form
     {
         try
         {
-            if (System.IO.File.Exists("doodle_bg.png"))
+            var bgPath = AppTheme.TryGetAssetPath("doodle_bg.png");
+            if (!string.IsNullOrWhiteSpace(bgPath))
             {
-                using var img = Image.FromFile("doodle_bg.png");
+                using var img = Image.FromFile(bgPath);
                 var bmp = new Bitmap(img.Width, img.Height);
                 using var g = Graphics.FromImage(bmp);
 
