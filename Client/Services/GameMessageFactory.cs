@@ -59,6 +59,24 @@ public static class GameMessageFactory
         };
     }
 
+    public static GameMessage GetMatchHistory(string sessionId, int limit = 20)
+    {
+        return new GameMessage
+        {
+            Type = MessageType.GetMatchHistory,
+            Payload = new { sessionId, limit }
+        };
+    }
+
+    public static GameMessage GetPlayerStats(string sessionId)
+    {
+        return new GameMessage
+        {
+            Type = MessageType.GetPlayerStats,
+            Payload = new { sessionId }
+        };
+    }
+
     public static GameMessage Draw(string roomCode, DrawPayload payload, string sessionId)
     {
         return new GameMessage

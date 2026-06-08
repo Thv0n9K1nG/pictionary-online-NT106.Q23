@@ -86,12 +86,3 @@ public sealed class PlayerStatsRepository
         }
     }
 }
-
-public sealed record PlayerStatsResult(
-    string UserId,
-    int TotalMatches,
-    int Wins,
-    int TotalScore,
-    int CorrectGuesses,
-    int DrawScore,
-    int GuessScore);

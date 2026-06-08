@@ -14,7 +14,7 @@ public class HintDto
 public sealed class MessageDispatcher
 {
     private readonly ClientState _state;
-    
+
     public event Action<string>? SystemMessageReceived;
     public event Action<string, int>? CorrectGuessReceived;
 
@@ -24,6 +24,8 @@ public sealed class MessageDispatcher
     public event Action<List<string>>? WordOptionsReceived;
     public event Action<List<PlayerInfo>, bool>? RoundEnded;
     public event Action<MatchResult>? GameEnded;
+    public event Action<IReadOnlyList<MatchResult>>? MatchHistoryReceived;
+    public event Action<PlayerStatsResult>? PlayerStatsReceived;
     public event Action? GameplayStateChanged;
 
 
@@ -69,31 +71,39 @@ public sealed class MessageDispatcher
             case MessageType.GameStart:
                 HandleGameStart(message);
                 break;
-    
+
             case MessageType.TimerUpdate:
                 HandleTimer(message);
                 break;
-    
+
             case MessageType.Hint:
                 HandleHint(message);
                 break;
-    
+
             case MessageType.WordOptions:
                 HandleWordOptions(message);
                 break;
-    
+
             case MessageType.CorrectGuess:
                 HandleCorrectGuess(message);
                 break;
-    
+
             case MessageType.RoundEnd:
                 HandleRoundEnd(message);
                 break;
-    
+
             case MessageType.GameEnd:
                 HandleGameEnd(message);
                 break;
-    
+
+            case MessageType.MatchHistoryResult:
+                HandleMatchHistoryResult(message);
+                break;
+
+            case MessageType.PlayerStatsResult:
+                HandlePlayerStatsResult(message);
+                break;
+
             case MessageType.Error:
                 _state.LastErrorMessage = GetMessageString(message.Payload) ?? "Error";
                 SystemMessageReceived?.Invoke(_state.LastErrorMessage);
@@ -382,6 +392,30 @@ public sealed class MessageDispatcher
         _state.IsDrawer = false;
         GameEnded?.Invoke(result);
         GameplayStateChanged?.Invoke();
+    }
+
+    private void HandleMatchHistoryResult(GameMessage message)
+    {
+        if (message.Payload is not JsonElement payload)
+            return;
+
+        var history = JsonSerializer.Deserialize<List<MatchResult>>(
+            payload.GetRawText(),
+            GameMessage.JsonOptions);
+
+        MatchHistoryReceived?.Invoke(history ?? []);
+    }
+
+    private void HandlePlayerStatsResult(GameMessage message)
+    {
+        if (message.Payload is not JsonElement payload)
+            return;
+
+        var stats = payload.Deserialize<PlayerStatsResult>(GameMessage.JsonOptions);
+        if (stats is not null)
+        {
+            PlayerStatsReceived?.Invoke(stats);
+        }
     }
 
     private static string? GetMessageString(object? payload)

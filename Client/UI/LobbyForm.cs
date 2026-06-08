@@ -84,6 +84,9 @@ public sealed class LobbyForm : Form
         var logoutButton = new SiticoneButton { Text = "Logout", Left = 650, Top = 65, Width = 100, Height = 40, Cursor = Cursors.Hand };
         AppTheme.StyleDangerButton(logoutButton);
 
+        var historyButton = new SiticoneButton { Text = "Lịch sử", Left = 20, Top = 450, Width = 130, Height = 45, Cursor = Cursors.Hand };
+        AppTheme.StyleSecondaryButton(historyButton);
+
         // ĐÃ SỬA: Chữ dưới nút Tạo. Đổi sang màu AppTheme.Text (tối) và in đậm (Bold) để không bị chìm vào nền
         _statusLabel.Left = 20; _statusLabel.Top = 120; _statusLabel.Width = 800;
         _statusLabel.Text = "Chào mừng bạn đến với xưởng vẽ!";
@@ -125,6 +128,7 @@ public sealed class LobbyForm : Form
         refreshButton.Click += async (_, _) => await RefreshRoomListAsync();
         joinButton.Click += async (_, _) => await SendJoinRoomAsync();
         logoutButton.Click += async (_, _) => await SendLogoutAsync();
+        historyButton.Click += (_, _) => OpenHistory();
         openGameButton.Click += (_, _) => OpenGame();
         _roomList.DoubleClick += async (_, _) => { if (_roomList.SelectedItem is RoomInfo room) { _roomCodeInput.Text = room.RoomCode; await SendJoinRoomAsync(); } };
         _socketService.MessageReceived += OnMessageReceived;
@@ -133,7 +137,7 @@ public sealed class LobbyForm : Form
 
         Controls.Add(exitButton); Controls.Add(title); Controls.Add(createButton); Controls.Add(refreshButton);
         Controls.Add(joinLabel); Controls.Add(_roomCodeInput); Controls.Add(joinButton); Controls.Add(_statusLabel);
-        Controls.Add(logoutButton); Controls.Add(roomLabel); Controls.Add(roomPanel); Controls.Add(playerLabel); Controls.Add(playerPanel); Controls.Add(openGameButton);
+        Controls.Add(logoutButton); Controls.Add(historyButton); Controls.Add(roomLabel); Controls.Add(roomPanel); Controls.Add(playerLabel); Controls.Add(playerPanel); Controls.Add(openGameButton);
 
         // --- LOAD VÀ XỬ LÝ ẢNH NỀN ---
         SetupDoodleBackground();
@@ -210,6 +214,14 @@ public sealed class LobbyForm : Form
         }
 
         bool EnsureLoggedIn() { if (!string.IsNullOrWhiteSpace(_state.SessionId)) return true; _statusLabel.Text = "Vui lòng đăng nhập trước khi dùng sảnh chờ."; _statusLabel.ForeColor = AppTheme.Danger; return false; }
+        void OpenHistory()
+        {
+            if (!EnsureLoggedIn()) return;
+
+            using var historyForm = new HistoryForm(_state, _socketService, _dispatcher);
+            historyForm.ShowDialog(this);
+        }
+
         string GetPlayerName() { return _state.Username ?? _state.PlayerId ?? "Player"; }
 
         void OnMessageReceived(object? sender, GameMessage message)
