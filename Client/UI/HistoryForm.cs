@@ -17,6 +17,17 @@ public sealed class HistoryForm : Form
 {
     private const int DefaultHistoryLimit = 30;
 
+    // Vị trí/kích thước 4 thông số trong stat panel: chỉnh các hằng số này nếu bạn muốn tinh lại UI.
+    private const int StatPanelLeft = 20;
+    private const int StatPanelTop = 65;
+    private const int StatPanelWidth = 650;
+    private const int StatPanelHeight = 108;
+    private const int StatFirstLeft = 18;
+    private const int StatTop = 18;
+    private const int StatColumnGap = 158;
+    private const int StatLabelWidth = 148;
+    private const int StatLabelHeight = 72;
+
     private readonly ClientState _state;
     private readonly SocketService _socketService;
     private readonly MessageDispatcher _dispatcher;
@@ -28,6 +39,7 @@ public sealed class HistoryForm : Form
     private readonly Label _scoreLabel = new();
     private readonly Label _correctGuessesLabel = new();
     private readonly SiticoneButton _refreshButton = new();
+    private readonly SiticoneButton _backButton = new();
     private readonly List<MatchResult> _matches = [];
 
     private SiticoneBorderlessForm _borderlessForm;
@@ -40,7 +52,7 @@ public sealed class HistoryForm : Form
 
         Text = "Pictionary Online - Match History";
         Width = 840;
-        Height = 560;
+        Height = 620;
         StartPosition = FormStartPosition.CenterParent;
 
         AppTheme.ApplyDarkForm(this);
@@ -50,15 +62,7 @@ public sealed class HistoryForm : Form
             BorderRadius = 15
         };
 
-        var dragControl = new SiticoneDragControl { TargetControl = this };
-        var exitButton = new SiticoneControlBox
-        {
-            Anchor = AnchorStyles.Top | AnchorStyles.Right,
-            FillColor = Color.Transparent,
-            IconColor = AppTheme.Text,
-            Left = 790,
-            Top = 0
-        };
+        _ = new SiticoneDragControl { TargetControl = this };
 
         var titleLabel = new Label
         {
@@ -79,13 +83,21 @@ public sealed class HistoryForm : Form
         _refreshButton.Cursor = Cursors.Hand;
         AppTheme.StyleSecondaryButton(_refreshButton);
 
-        var statsPanel = new SiticonePanel { Left = 20, Top = 65, Width = 650, Height = 78 };
+        _backButton.Text = "Quay lại";
+        _backButton.Left = 690;
+        _backButton.Top = 110;
+        _backButton.Width = 120;
+        _backButton.Height = 38;
+        _backButton.Cursor = Cursors.Hand;
+        AppTheme.StyleDangerButton(_backButton);
+
+        var statsPanel = new SiticonePanel { Left = StatPanelLeft, Top = StatPanelTop, Width = StatPanelWidth, Height = StatPanelHeight };
         AppTheme.StylePanel(statsPanel);
 
-        ConfigureStatsLabel(_totalMatchesLabel, "Trận đã chơi: ...", 18, 14);
-        ConfigureStatsLabel(_winsLabel, "Trận thắng: ...", 175, 14);
-        ConfigureStatsLabel(_scoreLabel, "Tổng điểm: ...", 330, 14);
-        ConfigureStatsLabel(_correctGuessesLabel, "Đoán đúng: ...", 485, 14);
+        ConfigureStatsLabel(_totalMatchesLabel, "Trận đã chơi: ...", StatFirstLeft, StatTop);
+        ConfigureStatsLabel(_winsLabel, "Trận thắng: ...", StatFirstLeft + StatColumnGap, StatTop);
+        ConfigureStatsLabel(_scoreLabel, "Tổng điểm: ...", StatFirstLeft + StatColumnGap * 2, StatTop);
+        ConfigureStatsLabel(_correctGuessesLabel, "Đoán đúng: ...", StatFirstLeft + StatColumnGap * 3, StatTop);
         statsPanel.Controls.AddRange([
             _totalMatchesLabel,
             _winsLabel,
@@ -94,20 +106,20 @@ public sealed class HistoryForm : Form
         ]);
 
         _statusLabel.Left = 20;
-        _statusLabel.Top = 150;
+        _statusLabel.Top = 184;
         _statusLabel.Width = 790;
         _statusLabel.Height = 24;
         _statusLabel.Text = "Đang tải lịch sử đấu...";
         AppTheme.StyleLabel(_statusLabel);
         _statusLabel.Font = AppTheme.NormalFont;
 
-        var historyPanel = new SiticonePanel { Left = 20, Top = 178, Width = 790, Height = 245 };
+        var historyPanel = new SiticonePanel { Left = 20, Top = 214, Width = 790, Height = 260 };
         AppTheme.StylePanel(historyPanel);
 
         _historyList.Left = 10;
         _historyList.Top = 10;
         _historyList.Width = 770;
-        _historyList.Height = 225;
+        _historyList.Height = 240;
         _historyList.View = View.Details;
         _historyList.FullRowSelect = true;
         _historyList.MultiSelect = false;
@@ -120,7 +132,7 @@ public sealed class HistoryForm : Form
         AppTheme.StyleListView(_historyList);
         historyPanel.Controls.Add(_historyList);
 
-        var detailPanel = new SiticonePanel { Left = 20, Top = 435, Width = 790, Height = 80 };
+        var detailPanel = new SiticonePanel { Left = 20, Top = 490, Width = 790, Height = 82 };
         AppTheme.StylePanel(detailPanel);
 
         _detailBox.Left = 10;
@@ -137,10 +149,10 @@ public sealed class HistoryForm : Form
         detailPanel.Controls.Add(_detailBox);
 
         Controls.AddRange([
-            exitButton,
             titleLabel,
             statsPanel,
             _refreshButton,
+            _backButton,
             _statusLabel,
             historyPanel,
             detailPanel
@@ -159,6 +171,7 @@ public sealed class HistoryForm : Form
         };
 
         _refreshButton.Click += async (_, _) => await RequestHistoryAndStatsAsync();
+        _backButton.Click += (_, _) => Close();
         _historyList.SelectedIndexChanged += (_, _) => RenderSelectedMatch();
         Load += async (_, _) => await RequestHistoryAndStatsAsync();
     }
@@ -168,9 +181,9 @@ public sealed class HistoryForm : Form
         label.Text = text;
         label.Left = left;
         label.Top = top;
-        label.Width = 145;
-        label.Height = 48;
-        label.Font = AppTheme.HeaderFont;
+        label.Width = StatLabelWidth;
+        label.Height = StatLabelHeight;
+        label.Font = new Font(AppTheme.NormalFont.FontFamily, 10, FontStyle.Bold);
         label.ForeColor = AppTheme.Text;
         label.BackColor = Color.Transparent;
         label.TextAlign = ContentAlignment.MiddleLeft;

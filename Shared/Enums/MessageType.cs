@@ -43,5 +43,7 @@ public enum MessageType
     MatchHistoryResult = 32,
     PlayerStatsResult = 33,
     Logout = 34,
-    LogoutSuccess = 35
+    LogoutSuccess = 35,
+    LeaveRoom = 36,
+    LeaveRoomSuccess = 37
 }

@@ -49,7 +49,6 @@ public sealed class LobbyForm : Form
         };
 
         var dragControl = new SiticoneDragControl { TargetControl = this };
-        var exitButton = new SiticoneControlBox { Anchor = AnchorStyles.Top | AnchorStyles.Right, FillColor = Color.Transparent, IconColor = AppTheme.Text, Left = 800, Top = 0 };
 
         var title = new Label
         {
@@ -135,7 +134,7 @@ public sealed class LobbyForm : Form
         FormClosed += (_, _) => _socketService.MessageReceived -= OnMessageReceived;
         Shown += async (_, _) => await RefreshRoomListOnFirstShowAsync();
 
-        Controls.Add(exitButton); Controls.Add(title); Controls.Add(createButton); Controls.Add(refreshButton);
+        Controls.Add(title); Controls.Add(createButton); Controls.Add(refreshButton);
         Controls.Add(joinLabel); Controls.Add(_roomCodeInput); Controls.Add(joinButton); Controls.Add(_statusLabel);
         Controls.Add(logoutButton); Controls.Add(historyButton); Controls.Add(roomLabel); Controls.Add(roomPanel); Controls.Add(playerLabel); Controls.Add(playerPanel); Controls.Add(openGameButton);
 

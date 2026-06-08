@@ -69,8 +69,6 @@ public sealed class GameForm : Form
         };
 
         var dragControl = new SiticoneDragControl { TargetControl = this };
-        var exitButton = new SiticoneControlBox { Anchor = AnchorStyles.Top | AnchorStyles.Right, FillColor = Color.Transparent, IconColor = AppTheme.SubText, Left = 1110, Top = 0 };
-        Controls.Add(exitButton);
 
         // Giữ nguyên nền trắng cho vùng vẽ để các màu sắc vẽ hiển thị chính xác
         var canvasContainer = new SiticonePanel { Left = 20, Top = 40, Width = 800, Height = 600, BorderRadius = 10, FillColor = Color.White, BorderColor = AppTheme.Border, BorderThickness = 1 };
@@ -175,6 +173,19 @@ public sealed class GameForm : Form
         AppTheme.StylePrimaryButton(_btnSend);
         _btnSend.Font = AppTheme.HeaderFont;
         Controls.Add(_btnSend);
+
+        var exitGameButton = new SiticoneButton
+        {
+            Text = "Thoát game",
+            Left = rightX,
+            Top = 745,
+            Width = rightWidth,
+            Height = 42,
+            Cursor = Cursors.Hand
+        };
+        AppTheme.StyleDangerButton(exitGameButton);
+        exitGameButton.Click += ExitGameButton_Click;
+        Controls.Add(exitGameButton);
 
         _countdownTimer.Interval = 1000;
         _countdownTimer.Tick += CountdownTimer_Tick;
@@ -608,6 +619,10 @@ public sealed class GameForm : Form
         form.ShowDialog(this);
         if (form.BackToLobbyRequested)
         {
+            _state.RoomCode = null;
+            _state.PlayerList.Clear();
+            _state.CurrentGameState = GameState.Waiting;
+            _state.IsDrawer = false;
             _gameResultDialogOpen = false;
             Close();
             return;
@@ -622,5 +637,37 @@ public sealed class GameForm : Form
         if (!string.IsNullOrWhiteSpace(_state.RoomCode) && !string.IsNullOrWhiteSpace(_state.SessionId)) return true;
         AppendChat("🔔 [Lỗi] Thiếu thông tin phòng, vui lòng kết nối lại.", AppTheme.Danger);
         return false;
+    }
+
+    private async void ExitGameButton_Click(object? sender, EventArgs e)
+    {
+        using var confirm = new ExitGameConfirmForm();
+        if (confirm.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        if (!EnsureGameplayContext())
+        {
+            Close();
+            return;
+        }
+
+        var roomCode = _state.RoomCode!;
+        var sessionId = _state.SessionId!;
+
+        try
+        {
+            await _socketService.SendAsync(GameMessageFactory.LeaveRoom(roomCode, sessionId));
+            _state.RoomCode = null;
+            _state.PlayerList.Clear();
+            _state.CurrentGameState = GameState.Waiting;
+            _state.IsDrawer = false;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            AppendChat($"[Lỗi] Không thể thoát game: {ex.Message}", AppTheme.Danger);
+        }
     }
 }

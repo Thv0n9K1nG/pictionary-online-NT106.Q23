@@ -96,6 +96,10 @@ public sealed class MessageDispatcher
                 HandleGameEnd(message);
                 break;
 
+            case MessageType.LeaveRoomSuccess:
+                HandleLeaveRoomSuccess();
+                break;
+
             case MessageType.MatchHistoryResult:
                 HandleMatchHistoryResult(message);
                 break;
@@ -391,6 +395,15 @@ public sealed class MessageDispatcher
         _state.CurrentGameState = GameState.GameOver;
         _state.IsDrawer = false;
         GameEnded?.Invoke(result);
+        GameplayStateChanged?.Invoke();
+    }
+
+    private void HandleLeaveRoomSuccess()
+    {
+        _state.RoomCode = null;
+        _state.PlayerList.Clear();
+        _state.CurrentGameState = GameState.Waiting;
+        _state.IsDrawer = false;
         GameplayStateChanged?.Invoke();
     }
 

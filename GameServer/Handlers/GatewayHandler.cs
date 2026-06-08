@@ -152,6 +152,8 @@ public sealed class GatewayHandler
                 success = true,
                 roomCode,
                 roomDeleted = result.RoomDeleted,
+                roundEnded = result.RoundEnded,
+                gameEnded = result.GameEnded,
                 roomInfo,
                 players = result.Players
             }, cancellationToken);
@@ -159,6 +161,11 @@ public sealed class GatewayHandler
             if (result.Room is not null)
             {
                 await SendCheckpointAsync(result.Room, stream, cancellationToken);
+            }
+
+            if (result.RoundEnded)
+            {
+                await SendRoundEndEventsAsync(roomCode, result.Players, result.GameEnded, stream, cancellationToken);
             }
 
             Console.WriteLine($"[GameServer:{_serverId}] Player {playerId} left room {roomCode}.");

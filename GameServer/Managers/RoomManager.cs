@@ -65,7 +65,7 @@ public sealed class RoomManager
             return new LeaveRoomResult(roomCode, true, null, []);
         }
 
-        return new LeaveRoomResult(roomCode, false, room, result.Players);
+        return new LeaveRoomResult(roomCode, false, room, result.Players, result.RoundEnded, result.GameEnded);
     }
 
     public async Task<RoundStartResult> ReadyAsync(string roomCode, string playerId, CancellationToken cancellationToken)
@@ -211,5 +211,7 @@ public sealed class RoomManager
         string RoomCode,
         bool RoomDeleted,
         GameRoom? Room,
-        IReadOnlyList<PlayerInfo> Players);
+        IReadOnlyList<PlayerInfo> Players,
+        bool RoundEnded = false,
+        bool GameEnded = false);
 }

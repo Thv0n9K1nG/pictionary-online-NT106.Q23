@@ -41,15 +41,6 @@ public sealed class LoginForm : Form
 
         _ = new SiticoneDragControl { TargetControl = this };
 
-        var exitButton = new SiticoneControlBox
-        {
-            Anchor = AnchorStyles.Top | AnchorStyles.Right,
-            FillColor = Color.Transparent,
-            IconColor = AppTheme.SubText,
-            Left = 410,
-            Top = 0
-        };
-
         // ĐÃ SỬA: Thêm BackColor và UseCompatibleTextRendering
         var title = new Label
         {
@@ -91,7 +82,7 @@ public sealed class LoginForm : Form
         var loginButton = new SiticoneButton
         {
             Text = "Login",
-            Left = 145,
+            Left = 80,
             Top = 320,
             Width = 105,
             Height = 40,
@@ -103,7 +94,7 @@ public sealed class LoginForm : Form
         var registerButton = new SiticoneButton
         {
             Text = "Register",
-            Left = 260,
+            Left = 195,
             Top = 320,
             Width = 105,
             Height = 40,
@@ -117,6 +108,17 @@ public sealed class LoginForm : Form
         registerButton.BorderRadius = 8;
         registerButton.Font = AppTheme.HeaderFont;
         registerButton.UseTransparentBackground = true;
+
+        var exitGameButton = new SiticoneButton
+        {
+            Text = "Thoát game",
+            Left = 310,
+            Top = 320,
+            Width = 115,
+            Height = 40,
+            Cursor = Cursors.Hand
+        };
+        AppTheme.StyleDangerButton(exitGameButton);
 
         _state.ConnectionStateChanged += connectionState =>
         {
@@ -242,6 +244,8 @@ public sealed class LoginForm : Form
             await _socketService.SendAsync(GameMessageFactory.Login(user, pass));
         };
 
+        exitGameButton.Click += (_, _) => Application.Exit();
+
         Shown += (_, _) =>
         {
             Hide();
@@ -254,7 +258,6 @@ public sealed class LoginForm : Form
             _reconnectService.Dispose();
         };
 
-        Controls.Add(exitButton);
         Controls.Add(title);
         Controls.Add(userLabel);
         Controls.Add(userInput);
@@ -262,6 +265,7 @@ public sealed class LoginForm : Form
         Controls.Add(passInput);
         Controls.Add(loginButton);
         Controls.Add(registerButton);
+        Controls.Add(exitGameButton);
         AppTheme.ApplyCornerLogo(this, "TopRight");
         SetupDoodleBackground();
 

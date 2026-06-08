@@ -59,6 +59,15 @@ public static class GameMessageFactory
         };
     }
 
+    public static GameMessage LeaveRoom(string roomCode, string sessionId)
+    {
+        return new GameMessage
+        {
+            Type = MessageType.LeaveRoom,
+            Payload = new { roomCode, sessionId }
+        };
+    }
+
     public static GameMessage GetMatchHistory(string sessionId, int limit = 20)
     {
         return new GameMessage

@@ -11,6 +11,7 @@ public sealed class ResultForm : Form
     private readonly SiticoneBorderlessForm _borderlessForm;
     private readonly SiticonePanel _mainPanel;
     private readonly ListBox _resultList;
+    private readonly SiticoneButton _continueButton;
     private readonly SiticoneButton _backToLobbyButton;
 
     public bool BackToLobbyRequested { get; private set; }
@@ -19,7 +20,7 @@ public sealed class ResultForm : Form
     {
         Text = title;
         Width = 420;
-        Height = 450;
+        Height = 500;
         StartPosition = FormStartPosition.CenterParent;
 
         AppTheme.ApplyDarkForm(this);
@@ -31,16 +32,6 @@ public sealed class ResultForm : Form
         };
 
         _ = new SiticoneDragControl { TargetControl = this };
-
-        var exitButton = new SiticoneControlBox
-        {
-            Anchor = AnchorStyles.Top | AnchorStyles.Right,
-            FillColor = Color.Transparent,
-            IconColor = AppTheme.SubText,
-            Left = 375,
-            Top = 0
-        };
-        Controls.Add(exitButton);
 
         var lblTitle = new Label
         {
@@ -54,7 +45,7 @@ public sealed class ResultForm : Form
         };
         Controls.Add(lblTitle);
 
-        _mainPanel = new SiticonePanel { Left = 20, Top = 60, Width = 380, Height = 360 };
+        _mainPanel = new SiticonePanel { Left = 20, Top = 60, Width = 380, Height = 320 };
         AppTheme.StylePanel(_mainPanel);
 
         _resultList = new ListBox
@@ -62,30 +53,47 @@ public sealed class ResultForm : Form
             Left = 10,
             Top = 10,
             Width = 360,
-            Height = 340,
+            Height = 300,
             BorderStyle = BorderStyle.None
         };
         AppTheme.StyleListBox(_resultList);
 
         foreach (var result in results)
         {
-            _resultList.Items.Add($"{result.Username} - {result.Score} diem");
+            _resultList.Items.Add($"{result.Username} - {result.Score} điểm");
         }
 
         _mainPanel.Controls.Add(_resultList);
         Controls.Add(_mainPanel);
 
+        _continueButton = new SiticoneButton
+        {
+            Text = "Tiếp tục",
+            Left = 115,
+            Top = 405,
+            Width = 190,
+            Height = 42,
+            Cursor = Cursors.Hand
+        };
+        AppTheme.StyleSuccessButton(_continueButton);
+        _continueButton.Click += (_, _) =>
+        {
+            DialogResult = DialogResult.OK;
+            Close();
+        };
+        Controls.Add(_continueButton);
+
         _backToLobbyButton = new SiticoneButton
         {
             Text = "Back to Lobby",
             Left = 115,
-            Top = 430,
+            Top = 405,
             Width = 190,
             Height = 42,
             Visible = false,
             Cursor = Cursors.Hand
         };
-        AppTheme.StylePrimaryButton(_backToLobbyButton);
+        AppTheme.StyleDangerButton(_backToLobbyButton);
         _backToLobbyButton.Click += (_, _) =>
         {
             BackToLobbyRequested = true;
@@ -97,9 +105,7 @@ public sealed class ResultForm : Form
 
     public void EnableBackToLobby()
     {
-        Height = 520;
-        _mainPanel.Height = 340;
-        _resultList.Height = 320;
+        _continueButton.Visible = false;
         _backToLobbyButton.Visible = true;
     }
 }

@@ -166,6 +166,9 @@ public sealed class ClientHandler
                 case MessageType.Logout:
                     await HandleLogoutAsync(message, cancellationToken);
                     break;
+                case MessageType.LeaveRoom:
+                    await HandleLeaveRoomAsync(message, cancellationToken);
+                    break;
                 case MessageType.GetMatchHistory:
                     await HandleGetMatchHistoryAsync(message, cancellationToken);
                     break;
@@ -479,6 +482,36 @@ public sealed class ClientHandler
             Type = MessageType.MatchHistoryResult,
             Payload = history
         }, cancellationToken);
+    }
+
+    private async Task HandleLeaveRoomAsync(GameMessage message, CancellationToken cancellationToken)
+    {
+        if (!TryResolveSession(message.Payload, out var session, out var sessionId, out var error))
+        {
+            await SendAsync(CreateError(MessageType.Error, error), cancellationToken);
+            return;
+        }
+
+        var resolvedSession = session!;
+        if (!_sessionDirectory.TryBeginRoomOperation(resolvedSession.PlayerId, out var membershipError))
+        {
+            await SendAsync(CreateError(MessageType.Error, membershipError), cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await LeaveExistingRoomsForPlayerAsync(resolvedSession.PlayerId, excludeRoomCode: null, cancellationToken);
+            await SendAsync(new GameMessage
+            {
+                Type = MessageType.LeaveRoomSuccess,
+                Payload = new { sessionId, message = "Left room successfully." }
+            }, cancellationToken);
+        }
+        finally
+        {
+            _sessionDirectory.EndRoomOperation(resolvedSession.PlayerId);
+        }
     }
 
     private async Task HandleGetPlayerStatsAsync(GameMessage message, CancellationToken cancellationToken)

@@ -25,15 +25,6 @@ public sealed class GatewayConnectionForm : Form
 
         _ = new SiticoneDragControl { TargetControl = this };
 
-        var exitButton = new SiticoneControlBox
-        {
-            Anchor = AnchorStyles.Top | AnchorStyles.Right,
-            FillColor = Color.Transparent,
-            IconColor = AppTheme.SubText,
-            Left = 410,
-            Top = 0
-        };
-
         var title = new Label
         {
             Text = "Pictionary Online",
@@ -57,9 +48,21 @@ public sealed class GatewayConnectionForm : Form
             Height = 32
         };
 
-        Controls.Add(exitButton);
+        var exitGameButton = new SiticoneButton
+        {
+            Text = "Thoát game",
+            Left = 165,
+            Top = 282,
+            Width = 130,
+            Height = 34,
+            Cursor = Cursors.Hand
+        };
+        AppTheme.StyleDangerButton(exitGameButton);
+        exitGameButton.Click += (_, _) => Application.Exit();
+
         Controls.Add(title);
         Controls.Add(_statusLabel);
+        Controls.Add(exitGameButton);
     }
 
     public void SetStatus(string status, Color color)

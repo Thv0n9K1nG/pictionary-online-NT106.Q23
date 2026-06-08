@@ -111,6 +111,56 @@ public sealed class GameRoom
             }
 
             var removed = _players[index];
+            if (State is GameState.SelectingWord or GameState.Drawing or GameState.RoundEnd)
+            {
+                _players[index] = removed with { IsConnected = false, IsReady = true, IsDrawer = false };
+                _sessionByPlayerId.Remove(playerId);
+                _correctGuessers.Remove(playerId);
+
+                var activePlayers = _players.Count(player => player.IsConnected);
+                if (activePlayers == 0)
+                {
+                    State = GameState.GameOver;
+                    return new LeavePlayerResult(removed.IsHost, true, []);
+                }
+
+                if (removed.IsHost)
+                {
+                    ReassignHost();
+                }
+
+                if (activePlayers < 2)
+                {
+                    State = GameState.GameOver;
+                    RoundEndsAt = DateTimeOffset.UtcNow;
+                    return new LeavePlayerResult(removed.IsHost, false, PlayersWithDrawerFlag(), true, true);
+                }
+
+                var roundEnded = false;
+                var gameEnded = false;
+                if (CurrentDrawerId == playerId)
+                {
+                    CurrentDrawerId = null;
+                    CurrentWord = null;
+                    CurrentMaskedWord = null;
+                    WordOptions = [];
+                    RoundEndsAt = DateTimeOffset.UtcNow;
+                    CompletedRounds++;
+                    State = CompletedRounds >= activePlayers ? GameState.GameOver : GameState.RoundEnd;
+                    roundEnded = true;
+                    gameEnded = State == GameState.GameOver;
+                }
+                else if (State == GameState.Drawing &&
+                         _players.Where(player => player.IsConnected && player.PlayerId != CurrentDrawerId)
+                             .All(player => _correctGuessers.Contains(player.PlayerId)))
+                {
+                    gameEnded = EndRoundCore();
+                    roundEnded = true;
+                }
+
+                return new LeavePlayerResult(removed.IsHost, false, PlayersWithDrawerFlag(), roundEnded, gameEnded);
+            }
+
             _players.RemoveAt(index);
             _sessionByPlayerId.Remove(playerId);
             _correctGuessers.Remove(playerId);
@@ -136,10 +186,7 @@ public sealed class GameRoom
 
             if (removed.IsHost)
             {
-                for (var i = 0; i < _players.Count; i++)
-                {
-                    _players[i] = _players[i] with { IsHost = i == 0 };
-                }
+                ReassignHost();
             }
 
             return new LeavePlayerResult(removed.IsHost, false, PlayersWithDrawerFlag());
@@ -239,14 +286,34 @@ public sealed class GameRoom
             }
 
             _players[readyIndex] = _players[readyIndex] with { IsReady = true };
-            if (_players.Any(player => !player.IsReady))
+            var activePlayers = _players.Where(player => player.IsConnected).ToList();
+            if (activePlayers.Count < 2)
+            {
+                State = GameState.GameOver;
+                throw new InvalidOperationException("At least 2 connected players are required.");
+            }
+
+            if (_players.Any(player => player.IsConnected && !player.IsReady))
             {
                 return new ReadyResult(false, PlayersWithDrawerFlag());
             }
 
-            _drawerIndex = _drawerIndex < 0
-                ? Random.Shared.Next(_players.Count)
-                : (_drawerIndex + 1) % _players.Count;
+            if (_drawerIndex < 0)
+            {
+                var activeIndex = Random.Shared.Next(activePlayers.Count);
+                _drawerIndex = _players.FindIndex(player => player.PlayerId == activePlayers[activeIndex].PlayerId);
+            }
+            else
+            {
+                for (var attempts = 0; attempts < _players.Count; attempts++)
+                {
+                    _drawerIndex = (_drawerIndex + 1) % _players.Count;
+                    if (_players[_drawerIndex].IsConnected)
+                    {
+                        break;
+                    }
+                }
+            }
 
             CurrentDrawerId = _players[_drawerIndex].PlayerId;
             CurrentWord = null;
@@ -357,7 +424,7 @@ public sealed class GameRoom
             _correctGuessers.Add(playerId);
 
             var allGuessersCorrect = _players
-                .Where(player => player.PlayerId != CurrentDrawerId)
+                .Where(player => player.IsConnected && player.PlayerId != CurrentDrawerId)
                 .All(player => _correctGuessers.Contains(player.PlayerId));
 
             var ended = allGuessersCorrect;
@@ -440,9 +507,9 @@ public sealed class GameRoom
         OwnerServerId = ownerServerId;
     }
 
-    private bool EndRoundCore(GameEngine engine)
+    private bool EndRoundCore(GameEngine? engine = null)
     {
-        if (CurrentDrawerId is not null)
+        if (CurrentDrawerId is not null && engine is not null)
         {
             var drawerScore = engine.CalculateDrawerScore(_correctGuessers.Count);
             AddScore(CurrentDrawerId, drawerScore);
@@ -450,9 +517,21 @@ public sealed class GameRoom
         }
 
         CompletedRounds++;
-        State = CompletedRounds >= _players.Count ? GameState.GameOver : GameState.RoundEnd;
+        var activePlayers = Math.Max(1, _players.Count(player => player.IsConnected));
+        State = CompletedRounds >= activePlayers ? GameState.GameOver : GameState.RoundEnd;
         RoundEndsAt = DateTimeOffset.UtcNow;
         return State == GameState.GameOver;
+    }
+
+    private void ReassignHost()
+    {
+        var assigned = false;
+        for (var i = 0; i < _players.Count; i++)
+        {
+            var isHost = !assigned && _players[i].IsConnected;
+            _players[i] = _players[i] with { IsHost = isHost };
+            assigned |= isHost;
+        }
     }
 
     private void AddScore(string playerId, int score)
@@ -491,7 +570,9 @@ public sealed class GameRoom
     public sealed record LeavePlayerResult(
         bool RemovedHost,
         bool RoomDeleted,
-        IReadOnlyList<PlayerInfo> Players);
+        IReadOnlyList<PlayerInfo> Players,
+        bool RoundEnded = false,
+        bool GameEnded = false);
 
     public sealed record ReadyResult(
         bool AllReady,
