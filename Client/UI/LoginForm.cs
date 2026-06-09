@@ -254,7 +254,14 @@ public sealed class LoginForm : Form
             await _socketService.SendAsync(GameMessageFactory.Login(user, pass));
         };
 
-        exitGameButton.Click += (_, _) => Application.Exit();
+        exitGameButton.Click += (_, _) =>
+        {
+            using var confirm = new ExitGameConfirmForm();
+            if (confirm.ShowDialog(this) == DialogResult.OK)
+            {
+                Application.Exit();
+            }
+        };
 
         Shown += (_, _) =>
         {
