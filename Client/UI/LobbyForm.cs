@@ -119,7 +119,7 @@ public sealed class LobbyForm : Form
         playerPanel.Controls.Add(_playerList);
 
         // --- NÚT VÀO GAME ---
-        var openGameButton = new SiticoneButton { Text = "Bắt đầu Game", Left = 750, Top = 450, Width = 160, Height = 45, Enabled = false, Cursor = Cursors.Hand };
+        var openGameButton = new SiticoneButton { Text = "Bắt đầu", Left = 750, Top = 450, Width = 160, Height = 45, Enabled = false, Cursor = Cursors.Hand };
         AppTheme.StyleSuccessButton(openGameButton);
 
         // --- GÁN SỰ KIỆN ---
