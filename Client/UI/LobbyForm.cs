@@ -36,7 +36,7 @@ public sealed class LobbyForm : Form
         _dispatcher = new MessageDispatcher(_state);
 
         Text = "Pictionary Online - Lobby";
-        Width = 850;
+        Width = 940;
         Height = 520;
         StartPosition = FormStartPosition.CenterScreen;
 
@@ -62,32 +62,32 @@ public sealed class LobbyForm : Form
         };
 
         // --- THANH CÔNG CỤ ---
-        var createButton = new SiticoneButton { Text = "Tạo Phòng", Left = 20, Top = 65, Width = 130, Height = 40, Cursor = Cursors.Hand };
+        var createButton = new SiticoneButton { Text = "Tạo Phòng", Left = 20, Top = 65, Width = 150, Height = 40, Cursor = Cursors.Hand };
         AppTheme.StylePrimaryButton(createButton);
 
         // ĐÃ SỬA: Thêm UseTransparentBackground = true để xóa viền rác quanh nút bo tròn
-        var refreshButton = new SiticoneButton { Text = "Làm mới", Left = 160, Top = 65, Width = 110, Height = 40, BorderRadius = 8, FillColor = AppTheme.Border, ForeColor = AppTheme.Text, Font = AppTheme.HeaderFont, Cursor = Cursors.Hand, UseTransparentBackground = true };
+        var refreshButton = new SiticoneButton { Text = "Làm mới", Left = 180, Top = 65, Width = 130, Height = 40, BorderRadius = 8, FillColor = AppTheme.Border, ForeColor = AppTheme.Text, Font = AppTheme.HeaderFont, Cursor = Cursors.Hand, UseTransparentBackground = true };
 
-        var joinLabel = new Label { Text = "Mã phòng:", Left = 285, Top = 75, AutoSize = true, BackColor = Color.Transparent };
+        var joinLabel = new Label { Text = "Mã phòng:", Left = 325, Top = 75, AutoSize = true, BackColor = Color.Transparent };
         AppTheme.StyleLabel(joinLabel);
         joinLabel.Font = AppTheme.HeaderFont;
 
-        _roomCodeInput.Left = 400; _roomCodeInput.Top = 65; _roomCodeInput.Width = 140; _roomCodeInput.Height = 40;
+        _roomCodeInput.Left = 435; _roomCodeInput.Top = 65; _roomCodeInput.Width = 145; _roomCodeInput.Height = 40;
         _roomCodeInput.PlaceholderText = "Nhập mã..."; _roomCodeInput.CharacterCasing = CharacterCasing.Upper;
         AppTheme.StyleTextBox(_roomCodeInput);
         _roomCodeInput.Font = AppTheme.HeaderFont;
 
-        var joinButton = new SiticoneButton { Text = "Vào", Left = 550, Top = 65, Width = 90, Height = 40, Cursor = Cursors.Hand };
+        var joinButton = new SiticoneButton { Text = "Vào", Left = 590, Top = 65, Width = 90, Height = 40, Cursor = Cursors.Hand };
         AppTheme.StylePrimaryButton(joinButton);
 
-        var logoutButton = new SiticoneButton { Text = "Logout", Left = 650, Top = 65, Width = 100, Height = 40, Cursor = Cursors.Hand };
+        var logoutButton = new SiticoneButton { Text = "Đăng xuất", Left = 690, Top = 65, Width = 135, Height = 40, Cursor = Cursors.Hand };
         AppTheme.StyleDangerButton(logoutButton);
 
         var historyButton = new SiticoneButton { Text = "Lịch sử", Left = 20, Top = 450, Width = 130, Height = 45, Cursor = Cursors.Hand };
         AppTheme.StyleSecondaryButton(historyButton);
 
         // ĐÃ SỬA: Chữ dưới nút Tạo. Đổi sang màu AppTheme.Text (tối) và in đậm (Bold) để không bị chìm vào nền
-        _statusLabel.Left = 20; _statusLabel.Top = 120; _statusLabel.Width = 800;
+        _statusLabel.Left = 20; _statusLabel.Top = 120; _statusLabel.Width = 890;
         _statusLabel.Text = "Chào mừng bạn đến với xưởng vẽ!";
         AppTheme.StyleLabel(_statusLabel);
         _statusLabel.Font = new Font(AppTheme.NormalFont.FontFamily, 10, FontStyle.Bold);
@@ -99,27 +99,27 @@ public sealed class LobbyForm : Form
         AppTheme.StyleLabel(roomLabel);
         roomLabel.Font = AppTheme.HeaderFont;
 
-        var roomPanel = new SiticonePanel { Left = 20, Top = 180, Width = 390, Height = 250 };
+        var roomPanel = new SiticonePanel { Left = 20, Top = 180, Width = 430, Height = 250 };
         AppTheme.StylePanel(roomPanel);
 
-        _roomList.Left = 10; _roomList.Top = 15; _roomList.Width = 370; _roomList.Height = 220;
+        _roomList.Left = 10; _roomList.Top = 15; _roomList.Width = 410; _roomList.Height = 220;
         AppTheme.StyleListBox(_roomList);
         roomPanel.Controls.Add(_roomList);
 
         // --- DANH SÁCH NGƯỜI CHƠI ---
-        var playerLabel = new Label { Text = "Họa sĩ trong phòng", Left = 430, Top = 150, AutoSize = true, BackColor = Color.Transparent };
+        var playerLabel = new Label { Text = "Họa sĩ trong phòng", Left = 470, Top = 150, AutoSize = true, BackColor = Color.Transparent };
         AppTheme.StyleLabel(playerLabel);
         playerLabel.Font = AppTheme.HeaderFont;
 
-        var playerPanel = new SiticonePanel { Left = 430, Top = 180, Width = 390, Height = 250 };
+        var playerPanel = new SiticonePanel { Left = 470, Top = 180, Width = 440, Height = 250 };
         AppTheme.StylePanel(playerPanel);
 
-        _playerList.Left = 10; _playerList.Top = 15; _playerList.Width = 370; _playerList.Height = 220;
+        _playerList.Left = 10; _playerList.Top = 15; _playerList.Width = 420; _playerList.Height = 220;
         AppTheme.StyleListBox(_playerList);
         playerPanel.Controls.Add(_playerList);
 
         // --- NÚT VÀO GAME ---
-        var openGameButton = new SiticoneButton { Text = "Bắt đầu Game", Left = 660, Top = 450, Width = 160, Height = 45, Enabled = false, Cursor = Cursors.Hand };
+        var openGameButton = new SiticoneButton { Text = "Bắt đầu Game", Left = 750, Top = 450, Width = 160, Height = 45, Enabled = false, Cursor = Cursors.Hand };
         AppTheme.StyleSuccessButton(openGameButton);
 
         // --- GÁN SỰ KIỆN ---
