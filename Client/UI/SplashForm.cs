@@ -1,8 +1,8 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
-using Siticone.Desktop.UI.WinForms;
 using Client.Utils;
+using Siticone.Desktop.UI.WinForms;
 
 namespace Client.UI;
 
@@ -10,7 +10,7 @@ public sealed class SplashForm : Form
 {
     private readonly System.Windows.Forms.Timer _loadingTimer = new();
     private readonly SiticoneProgressBar _progressBar = new();
-    private int _progressValue = 0;
+    private int _progressValue;
 
     public SplashForm()
     {
@@ -18,28 +18,24 @@ public sealed class SplashForm : Form
         Width = 550;
         Height = 380;
         StartPosition = FormStartPosition.CenterScreen;
-        FormBorderStyle = FormBorderStyle.None; // Xóa viền cổ điển
+        FormBorderStyle = FormBorderStyle.None;
 
         AppTheme.ApplyDarkForm(this);
 
-        // Bo góc Form cho đồng bộ với LoginForm
-        var borderless = new SiticoneBorderlessForm { ContainerControl = this, BorderRadius = 15 };
+        _ = new SiticoneBorderlessForm { ContainerControl = this, BorderRadius = 15 };
 
-        // --- PICTUREBOX HIỂN THỊ LOGO GAME ---
         var picLogo = new PictureBox
         {
-            Width = 450, // ĐÃ SỬA: Tăng chiều rộng Logo lên để nhìn to rõ hơn
-            Height = 280, // ĐÃ SỬA: Tăng chiều cao tương ứng
-            Left = (Width - 450) / 2, // Căn giữa theo chiều ngang
-            Top = 30,                 // Đẩy lên trên một chút cho cân đối
-            SizeMode = PictureBoxSizeMode.Zoom, // Tự động co dãn ảnh giữ nguyên tỉ lệ
-            BackColor = Color.Transparent // Để trong suốt lộ nền Doodle
+            Width = 410,
+            Height = 250,
+            Left = (ClientSize.Width - 380) / 2,
+            Top = 60,
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.Transparent
         };
 
-        // --- TỰ ĐỘNG QUÉT ĐƯỜNG DẪN ẢNH THÔNG MINH ---
         try
         {
-            // WinForms mặc định sẽ tự tìm ở thư mục chạy exe nếu truyền tên file trực tiếp
             var logoPath = AppTheme.TryGetAssetPath("logo.png");
             if (!string.IsNullOrWhiteSpace(logoPath))
             {
@@ -47,19 +43,25 @@ public sealed class SplashForm : Form
             }
             else
             {
-                // Dự phòng nếu lỡ tay xóa mất file ảnh ngoài đời thực
-                var lblFallback = new Label { Text = "🎨 PICTIONARY\nONLINE", Font = AppTheme.TitleFont, ForeColor = AppTheme.Primary, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, BackColor = Color.Transparent };
+                var lblFallback = new Label
+                {
+                    Text = "PICTIONARY\nONLINE",
+                    Font = AppTheme.TitleFont,
+                    ForeColor = AppTheme.Primary,
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    BackColor = Color.Transparent
+                };
                 Controls.Add(lblFallback);
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Lỗi đọc logo: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Logo load failed: {ex.Message}");
         }
 
         Controls.Add(picLogo);
 
-        // --- THANH LOADING PROGRESS BAR ---
         _progressBar.Height = 6;
         _progressBar.Dock = DockStyle.Bottom;
         _progressBar.FillColor = AppTheme.Border;
@@ -69,10 +71,8 @@ public sealed class SplashForm : Form
         _progressBar.Value = 0;
         Controls.Add(_progressBar);
 
-        // --- GỌI HÀM VẼ DOODLE CHO SPLASH FORM ---
         SetupDoodleBackground();
 
-        // --- TIMER ĐẾM GIỜ CHẠY ---
         _loadingTimer.Interval = 20;
         _loadingTimer.Tick += LoadingTimer_Tick;
         _loadingTimer.Start();
@@ -86,7 +86,7 @@ public sealed class SplashForm : Form
             _progressBar.Value = 100;
             _loadingTimer.Stop();
             DialogResult = DialogResult.OK;
-            Close(); // Tự tắt để kích hoạt vào Lobby
+            Close();
         }
         else
         {
@@ -94,7 +94,6 @@ public sealed class SplashForm : Form
         }
     }
 
-    // HÀM TỰ ĐỘNG TẠO NỀN DOODLE ĐỒNG BỘ THEO MÀU THEME HỆ THỐNG
     private void SetupDoodleBackground()
     {
         try
@@ -110,14 +109,27 @@ public sealed class SplashForm : Form
 
                 var colorMatrix = new System.Drawing.Imaging.ColorMatrix { Matrix33 = 0.08f };
                 var imgAttributes = new System.Drawing.Imaging.ImageAttributes();
-                imgAttributes.SetColorMatrix(colorMatrix, System.Drawing.Imaging.ColorMatrixFlag.Default, System.Drawing.Imaging.ColorAdjustType.Bitmap);
+                imgAttributes.SetColorMatrix(
+                    colorMatrix,
+                    System.Drawing.Imaging.ColorMatrixFlag.Default,
+                    System.Drawing.Imaging.ColorAdjustType.Bitmap);
 
-                g.DrawImage(img, new Rectangle(0, 0, bmp.Width, bmp.Height), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, imgAttributes);
+                g.DrawImage(
+                    img,
+                    new Rectangle(0, 0, bmp.Width, bmp.Height),
+                    0,
+                    0,
+                    img.Width,
+                    img.Height,
+                    GraphicsUnit.Pixel,
+                    imgAttributes);
 
-                this.BackgroundImage = bmp;
-                this.BackgroundImageLayout = ImageLayout.Tile;
+                BackgroundImage = bmp;
+                BackgroundImageLayout = ImageLayout.Tile;
             }
         }
-        catch { }
+        catch
+        {
+        }
     }
 }

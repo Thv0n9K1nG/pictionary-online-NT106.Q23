@@ -77,7 +77,7 @@ public sealed class HistoryForm : Form
 
         _refreshButton.Text = "Làm mới";
         _refreshButton.Left = 690;
-        _refreshButton.Top = 62;
+        _refreshButton.Top = 70;
         _refreshButton.Width = 120;
         _refreshButton.Height = 38;
         _refreshButton.Cursor = Cursors.Hand;
@@ -85,7 +85,7 @@ public sealed class HistoryForm : Form
 
         _backButton.Text = "Quay lại";
         _backButton.Left = 690;
-        _backButton.Top = 110;
+        _backButton.Top = 120;
         _backButton.Width = 120;
         _backButton.Height = 38;
         _backButton.Cursor = Cursors.Hand;

@@ -28,7 +28,7 @@ public sealed class LoginForm : Form
 
         Text = "Pictionary Online - Login";
         Width = 460;
-        Height = 420;
+        Height = 560;
         StartPosition = FormStartPosition.CenterScreen;
 
         AppTheme.ApplyDarkForm(this);
@@ -42,36 +42,46 @@ public sealed class LoginForm : Form
         _ = new SiticoneDragControl { TargetControl = this };
 
         // ĐÃ SỬA: Thêm BackColor và UseCompatibleTextRendering
-        var title = new Label
+        var logoBox = new PictureBox
         {
-            Text = "Pictionary Online",
-            AutoSize = true,
-            Font = AppTheme.TitleFont,
-            ForeColor = AppTheme.Primary,
-            Left = 30,
-            Top = 20,
-            BackColor = Color.Transparent,       // Làm nền trong suốt lộ họa tiết Doodle
-            UseCompatibleTextRendering = true    // Chống viền răng cưa
+            Left = 35,
+            Top = 40,
+            Width = 400,
+            Height = 235,
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.Transparent
         };
+        try
+        {
+            var logoPath = AppTheme.TryGetAssetPath("logo.png");
+            if (!string.IsNullOrWhiteSpace(logoPath))
+            {
+                logoBox.Image = Image.FromFile(logoPath);
+            }
+        }
+        catch
+        {
+            // Logo is optional; keep the login form usable if the asset is missing or locked.
+        }
 
-        var userLabel = new Label { Text = "Username:", Left = 30, Top = 193, AutoSize = true };
+        var userLabel = new Label { Text = "Username:", Left = 30, Top = 323, AutoSize = true };
         AppTheme.StyleLabel(userLabel);
         var userInput = new SiticoneTextBox
         {
             Left = 140,
-            Top = 185,
+            Top = 315,
             Width = 200,
             Height = 36,
             PlaceholderText = "Username..."
         };
         AppTheme.StyleTextBox(userInput);
 
-        var passLabel = new Label { Text = "Password:", Left = 30, Top = 238, AutoSize = true };
+        var passLabel = new Label { Text = "Password:", Left = 30, Top = 368, AutoSize = true };
         AppTheme.StyleLabel(passLabel);
         var passInput = new SiticoneTextBox
         {
             Left = 140,
-            Top = 230,
+            Top = 360,
             Width = 200,
             Height = 36,
             UseSystemPasswordChar = true,
@@ -81,10 +91,10 @@ public sealed class LoginForm : Form
 
         var loginButton = new SiticoneButton
         {
-            Text = "Login",
-            Left = 80,
-            Top = 320,
-            Width = 105,
+            Text = "Log in",
+            Left = 60,
+            Top = 450,
+            Width = 120,
             Height = 40,
             Enabled = false,
             Cursor = Cursors.Hand
@@ -94,9 +104,9 @@ public sealed class LoginForm : Form
         var registerButton = new SiticoneButton
         {
             Text = "Register",
-            Left = 195,
-            Top = 320,
-            Width = 105,
+            Left = 185,
+            Top = 450,
+            Width = 120,
             Height = 40,
             Enabled = false,
             Cursor = Cursors.Hand
@@ -111,9 +121,9 @@ public sealed class LoginForm : Form
 
         var exitGameButton = new SiticoneButton
         {
-            Text = "Thoát game",
+            Text = "Exit",
             Left = 310,
-            Top = 320,
+            Top = 450,
             Width = 115,
             Height = 40,
             Cursor = Cursors.Hand
@@ -254,11 +264,12 @@ public sealed class LoginForm : Form
         };
         FormClosed += (_, _) =>
         {
+            logoBox.Image?.Dispose();
             CloseConnectionForm();
             _reconnectService.Dispose();
         };
 
-        Controls.Add(title);
+        Controls.Add(logoBox);
         Controls.Add(userLabel);
         Controls.Add(userInput);
         Controls.Add(passLabel);
@@ -266,7 +277,6 @@ public sealed class LoginForm : Form
         Controls.Add(loginButton);
         Controls.Add(registerButton);
         Controls.Add(exitGameButton);
-        AppTheme.ApplyCornerLogo(this, "TopRight");
         SetupDoodleBackground();
 
         void OpenLobbyOnce()
