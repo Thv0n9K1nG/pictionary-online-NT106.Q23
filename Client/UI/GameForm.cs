@@ -79,7 +79,7 @@ public sealed class GameForm : Form
 
         SetupToolbar();
 
-        _lblHint.Text = "💡 Gợi ý: _ _ _ _";
+        _lblHint.Text = "💡 Từ khóa: _ _ _ _";
         _lblHint.Left = 25;
         _lblHint.Top = 750;
         _lblHint.AutoSize = true;
@@ -125,10 +125,23 @@ public sealed class GameForm : Form
         _btnReady.Font = new Font(AppTheme.HeaderFont.FontFamily, 14, FontStyle.Bold);
         Controls.Add(_btnReady);
 
-        Label lblScore = new Label { Text = "🏆 Bảng điểm", Left = rightX, Top = 175, Font = AppTheme.HeaderFont, ForeColor = AppTheme.Text, AutoSize = true, BackColor = Color.Transparent };
+        var exitGameButton = new SiticoneButton
+        {
+            Text = "THOÁT GAME",
+            Left = rightX,
+            Top = 165,
+            Width = rightWidth,
+            Height = 42,
+            Cursor = Cursors.Hand
+        };
+        AppTheme.StyleDangerButton(exitGameButton);
+        exitGameButton.Click += ExitGameButton_Click;
+        Controls.Add(exitGameButton);
+
+        Label lblScore = new Label { Text = "🏆 Bảng điểm", Left = rightX, Top = 225, Font = AppTheme.HeaderFont, ForeColor = AppTheme.Text, AutoSize = true, BackColor = Color.Transparent };
         Controls.Add(lblScore);
 
-        var scorePanel = new SiticonePanel { Left = rightX, Top = 205, Width = rightWidth, Height = 170 };
+        var scorePanel = new SiticonePanel { Left = rightX, Top = 255, Width = rightWidth, Height = 170 };
         AppTheme.StylePanel(scorePanel);
 
         _scoreboard.Left = 5; _scoreboard.Top = 5; _scoreboard.Width = rightWidth - 10; _scoreboard.Height = 160;
@@ -141,13 +154,13 @@ public sealed class GameForm : Form
         scorePanel.Controls.Add(_scoreboard);
         Controls.Add(scorePanel);
 
-        Label lblChat = new Label { Text = "💬 Khung Chat", Left = rightX, Top = 385, Font = AppTheme.HeaderFont, ForeColor = AppTheme.Text, AutoSize = true, BackColor = Color.Transparent };
+        Label lblChat = new Label { Text = "💬 Khung Chat", Left = rightX, Top = 435, Font = AppTheme.HeaderFont, ForeColor = AppTheme.Text, AutoSize = true, BackColor = Color.Transparent };
         Controls.Add(lblChat);
 
-        var chatPanel = new SiticonePanel { Left = rightX, Top = 415, Width = rightWidth, Height = 250 };
+        var chatPanel = new SiticonePanel { Left = rightX, Top = 465, Width = rightWidth, Height = 200 };
         AppTheme.StylePanel(chatPanel);
 
-        _chatBox.Left = 5; _chatBox.Top = 5; _chatBox.Width = rightWidth - 10; _chatBox.Height = 240;
+        _chatBox.Left = 5; _chatBox.Top = 5; _chatBox.Width = rightWidth - 10; _chatBox.Height = 190;
         _chatBox.ReadOnly = true; _chatBox.BorderStyle = BorderStyle.None;
         _chatBox.Font = AppTheme.NormalFont;
         _chatBox.BackColor = AppTheme.PanelBg;
@@ -173,19 +186,6 @@ public sealed class GameForm : Form
         AppTheme.StylePrimaryButton(_btnSend);
         _btnSend.Font = AppTheme.HeaderFont;
         Controls.Add(_btnSend);
-
-        var exitGameButton = new SiticoneButton
-        {
-            Text = "Thoát game",
-            Left = rightX,
-            Top = 745,
-            Width = rightWidth,
-            Height = 42,
-            Cursor = Cursors.Hand
-        };
-        AppTheme.StyleDangerButton(exitGameButton);
-        exitGameButton.Click += ExitGameButton_Click;
-        Controls.Add(exitGameButton);
 
         _countdownTimer.Interval = 1000;
         _countdownTimer.Tick += CountdownTimer_Tick;
@@ -291,6 +291,7 @@ public sealed class GameForm : Form
         _dispatcher.WordOptionsReceived += ShowWordSelection;
         _dispatcher.RoundEnded += ShowRoundResult;
         _dispatcher.GameEnded += ShowGameResult;
+        _dispatcher.ChatReceived += OnChatReceived;
 
         _btnReady.Click += BtnReady_Click;
         _btnSend.Click += BtnSend_Click;
@@ -323,6 +324,7 @@ public sealed class GameForm : Form
         _dispatcher.WordOptionsReceived -= ShowWordSelection;
         _dispatcher.RoundEnded -= ShowRoundResult;
         _dispatcher.GameEnded -= ShowGameResult;
+        _dispatcher.ChatReceived -= OnChatReceived;
 
         _btnReady.Click -= BtnReady_Click;
         _btnSend.Click -= BtnSend_Click;
@@ -459,7 +461,7 @@ public sealed class GameForm : Form
             string rawHint = hint.Replace(" ", "");
             int letterCount = rawHint.Length;
             string spacedHint = string.Join(" ", rawHint.ToCharArray());
-            _lblHint.Text = $"💡 Gợi ý: {spacedHint} ({letterCount} chữ cái)";
+            _lblHint.Text = $"💡 Từ khóa: {spacedHint} ({letterCount} chữ cái)";
             _lblHint.ForeColor = AppTheme.Primary;
         }
     }
@@ -563,6 +565,14 @@ public sealed class GameForm : Form
         _chatBox.AppendText(message + Environment.NewLine);
         _chatBox.SelectionColor = _chatBox.ForeColor;
         _chatBox.ScrollToCaret();
+    }
+
+    private void OnChatReceived(string message)
+    {
+        var color = message.StartsWith("[GỢI Ý]", StringComparison.OrdinalIgnoreCase)
+            ? AppTheme.Warning
+            : AppTheme.Text;
+        AppendChat(message, color);
     }
 
     private void ShowWordSelection(System.Collections.Generic.List<string> words)

@@ -16,6 +16,7 @@ public sealed class MessageDispatcher
     private readonly ClientState _state;
 
     public event Action<string>? SystemMessageReceived;
+    public event Action<string>? ChatReceived;
     public event Action<string, int>? CorrectGuessReceived;
 
     public event Action<List<PlayerInfo>>? PlayerListUpdated;
@@ -78,6 +79,10 @@ public sealed class MessageDispatcher
 
             case MessageType.Hint:
                 HandleHint(message);
+                break;
+
+            case MessageType.Chat:
+                HandleChat(message);
                 break;
 
             case MessageType.WordOptions:
@@ -307,6 +312,15 @@ public sealed class MessageDispatcher
         }
     }
 
+    private void HandleChat(GameMessage message)
+    {
+        var text = GetMessageString(message.Payload);
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            ChatReceived?.Invoke(text);
+        }
+    }
+
     private void HandleWordOptions(GameMessage message)
     {
         if (message.Payload is not JsonElement payload)
@@ -442,6 +456,7 @@ public sealed class MessageDispatcher
         if (payload is JsonElement element)
         {
             return ReadString(element, "message")
+                ?? ReadString(element, "text")
                 ?? ReadString(element, "error")
                 ?? (element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString());
         }
@@ -449,6 +464,7 @@ public sealed class MessageDispatcher
         var json = JsonSerializer.Serialize(payload, GameMessage.JsonOptions);
         using var doc = JsonDocument.Parse(json);
         return ReadString(doc.RootElement, "message")
+            ?? ReadString(doc.RootElement, "text")
             ?? ReadString(doc.RootElement, "error")
             ?? json;
     }

@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -14,11 +13,11 @@ public sealed class GeminiService
     private static readonly string[] FallbackHints =
     [
         "Bộ não gemini đã bị \"crash\" hãy dùng bộ não của bạn!",
-        "Bộ não của bạn sẽ hữu ích hơn một hint sinh ra bời AI. Vì vậy hãy dùng não.",
+        "Bộ não của bạn sẽ hữu ích hơn một hint sinh ra bởi AI. Vì vậy hãy dùng não.",
         "Hint là gì? Trust you bro!",
         "Tại sao cần dùng hint, hãy dùng não!",
         "Thằng drawer vẽ xấu quá sao? Hãy chửi nó.",
-        "Nhắm mát lại, suy nghĩ thêm một chút."
+        "Nhắm mắt lại, suy nghĩ thêm một chút."
     ];
 
     private static readonly HttpClient SharedHttpClient = new()
@@ -46,113 +45,89 @@ public sealed class GeminiService
 
     public async Task<string> GenerateHintAsync(string word, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(word) || !IsConfigured)
+        if (string.IsNullOrWhiteSpace(word))
         {
             return CreateFallbackHint(word);
         }
 
-        var cacheKey = NormalizeVietnamese(word);
+        var cacheKey = NormalizeForCompare(word);
         if (HintCache.TryGetValue(cacheKey, out var cachedHint))
         {
             return cachedHint;
         }
 
-        for (var attempt = 1; attempt <= 2; attempt++)
+        if (!IsConfigured)
         {
-            try
-            {
-                var request = new
-                {
-                    contents = new[]
-                    {
-                        new
-                        {
-                            parts = new[]
-                            {
-                                new { text = BuildHintPrompt(word, attempt) }
-                            }
-                        }
-                    },
-                    generationConfig = new
-                    {
-                        temperature = attempt == 1 ? 0.9 : 1.0,
-                        topP = 0.92,
-                        maxOutputTokens = 160,
-                        thinkingConfig = new
-                        {
-                            thinkingBudget = 0
-                        }
-                    }
-                };
-
-                using var httpRequest = new HttpRequestMessage(
-                    HttpMethod.Post,
-                    $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(_model)}:generateContent");
-                httpRequest.Headers.Add("x-goog-api-key", _apiKey);
-                httpRequest.Content = JsonContent.Create(request);
-
-                using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
-                if (response.StatusCode == HttpStatusCode.TooManyRequests)
-                {
-                    await DelayForRateLimitAsync(response, cancellationToken);
-                    continue;
-                }
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    continue;
-                }
-
-                await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken);
-                var hint = ExtractHint(document.RootElement, word);
-
-                if (!string.IsNullOrWhiteSpace(hint))
-                {
-                    HintCache[cacheKey] = hint;
-                    return hint;
-                }
-            }
-            catch
-            {
-                // Gemini hints are optional; retry once, then use a local safe hint.
-            }
+            return CacheFallback(cacheKey, word);
         }
 
-        var fallbackHint = CreateFallbackHint(word);
-        HintCache[cacheKey] = fallbackHint;
-        return fallbackHint;
+        try
+        {
+            var hint = await RequestHintAsync(word, cancellationToken);
+            if (IsUsableHint(hint, word))
+            {
+                HintCache[cacheKey] = hint!;
+                return hint!;
+            }
+        }
+        catch
+        {
+            // Gemini hints are optional; local fallback keeps gameplay moving.
+        }
+
+        return CacheFallback(cacheKey, word);
     }
 
-    private static string BuildHintPrompt(string word, int attempt)
+    private async Task<string?> RequestHintAsync(string word, CancellationToken cancellationToken)
     {
-        var extraInstruction = attempt == 1
-            ? "Viết tự nhiên, giàu hình ảnh, tránh từ quá ngắn."
-            : "Lần này bắt buộc dùng một câu 7-12 từ, không được trả lời 1-3 từ.";
+        var request = new
+        {
+            contents = new[]
+            {
+                new
+                {
+                    parts = new[]
+                    {
+                        new { text = BuildPrompt(word) }
+                    }
+                }
+            },
+            generationConfig = new
+            {
+                temperature = 0.8,
+                maxOutputTokens = 80,
+                thinkingConfig = new { thinkingBudget = 0 }
+            }
+        };
 
+        using var httpRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(_model)}:generateContent");
+        httpRequest.Headers.Add("x-goog-api-key", _apiKey);
+        httpRequest.Content = JsonContent.Create(request);
+
+        using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        return ExtractText(document.RootElement);
+    }
+
+    private static string BuildPrompt(string word)
+    {
         return $"""
-Bạn là người quản trò cho game Pictionary tiếng Việt.
-Hãy tạo đúng 1 gợi ý sáng tạo, gián tiếp cho đáp án bí mật.
-
-Đáp án bí mật: "{word}"
-
-Luật bắt buộc:
-- Không được nhắc lại đáp án bí mật.
-- Không dùng từng từ con rõ ràng trong đáp án bí mật.
-- Không mô tả quá trực diện như định nghĩa từ điển.
-- Không đưa ra danh từ gần nghĩa quá hiển nhiên.
-- Không dùng dấu ngoặc kép.
-- Không thêm tiền tố như "Gợi ý:".
-- Chỉ trả về một câu duy nhất, 7-12 từ.
-- Không trả lời dạng danh sách.
-- Không giải thích thêm, không chào hỏi, không mở đầu.
-- Nếu trả về danh sách hoặc lời dẫn, câu trả lời bị tính sai.
-- Câu phải gợi hình để người chơi vẽ/suy luận, không phải đáp án.
-- {extraInstruction}
+Bạn là quản trò Pictionary tiếng Việt.
+Tạo đúng 1 câu gợi ý gián tiếp cho đáp án: "{word}".
+Không nhắc lại đáp án, không dùng từ con trong đáp án, không thêm tiền tố "Gợi ý:".
+Chỉ trả về một câu tiếng Việt tự nhiên, 7-14 từ.
 """;
     }
 
-    private static string? ExtractHint(JsonElement root, string word)
+    private static string? ExtractText(JsonElement root)
     {
         if (!TryGetPropertyIgnoreCase(root, "candidates", out var candidates) ||
             candidates.ValueKind != JsonValueKind.Array)
@@ -174,13 +149,7 @@ Luật bắt buộc:
                 if (TryGetPropertyIgnoreCase(part, "text", out var textElement) &&
                     textElement.ValueKind == JsonValueKind.String)
                 {
-                    foreach (var hint in BuildHintCandidates(textElement.GetString()))
-                    {
-                        if (IsUsableHint(hint, word))
-                        {
-                            return hint;
-                        }
-                    }
+                    return CleanHint(textElement.GetString());
                 }
             }
         }
@@ -188,47 +157,19 @@ Luật bắt buộc:
         return null;
     }
 
-    private static IEnumerable<string> BuildHintCandidates(string? raw)
+    private static string CacheFallback(string cacheKey, string word)
     {
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            yield break;
-        }
-
-        var normalized = raw.Replace("\r\n", "\n");
-        foreach (var line in normalized.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var hint = CleanHint(line);
-            if (!string.IsNullOrWhiteSpace(hint))
-            {
-                yield return hint;
-            }
-        }
-
-        var fullHint = CleanHint(raw);
-        if (!string.IsNullOrWhiteSpace(fullHint))
-        {
-            yield return fullHint;
-        }
+        var fallback = CreateFallbackHint(word);
+        HintCache[cacheKey] = fallback;
+        return fallback;
     }
 
     private static string CreateFallbackHint(string word)
     {
-        var normalized = NormalizeVietnamese(word);
+        var normalized = NormalizeForCompare(word);
         var hash = normalized.Aggregate(17, (current, ch) => current * 31 + ch);
         var index = Math.Abs(hash) % FallbackHints.Length;
         return FallbackHints[index];
-    }
-
-    private static async Task DelayForRateLimitAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-    {
-        var delay = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromMilliseconds(1500);
-        if (delay > TimeSpan.FromSeconds(5))
-        {
-            delay = TimeSpan.FromSeconds(5);
-        }
-
-        await Task.Delay(delay, cancellationToken);
     }
 
     private static bool IsUsableHint(string? hint, string word)
@@ -239,23 +180,22 @@ Luật bắt buộc:
         }
 
         var words = hint.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (hint.Length < 18 || words.Length < 4)
+        if (hint.Length < 12 || words.Length < 4)
         {
             return false;
         }
 
-        var normalizedHint = NormalizeVietnamese(hint);
-        var normalizedWord = NormalizeVietnamese(word);
+        var normalizedHint = NormalizeForCompare(hint);
+        var normalizedWord = NormalizeForCompare(word);
         if (normalizedHint.Contains(normalizedWord, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        var meaningfulTokens = normalizedWord
+        return !normalizedWord
             .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Where(token => token.Length >= 3);
-
-        return !meaningfulTokens.Any(token => normalizedHint.Contains(token, StringComparison.OrdinalIgnoreCase));
+            .Where(token => token.Length >= 3)
+            .Any(token => normalizedHint.Contains(token, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string CleanHint(string? raw)
@@ -265,19 +205,13 @@ Luật bắt buộc:
             return string.Empty;
         }
 
-        var hint = raw.Trim();
-        hint = Regex.Replace(hint, @"^\s*[-*\d.)]+\s*", string.Empty);
-        hint = Regex.Replace(hint, @"^\s*gợi\s*ý\s*:\s*", string.Empty, RegexOptions.IgnoreCase);
-        hint = Regex.Replace(hint, @"^\s*(hint|suggestion)\s*:\s*", string.Empty, RegexOptions.IgnoreCase);
+        var hint = raw.Replace("\r\n", "\n").Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? raw;
+        hint = Regex.Replace(hint.Trim(), @"^\s*[-*\d.)]+\s*", string.Empty);
+        hint = Regex.Replace(hint, @"^\s*(gợi\s*ý|hint|suggestion)\s*:\s*", string.Empty, RegexOptions.IgnoreCase);
         hint = hint.Trim().Trim('"', '\'', '`');
 
         var words = hint.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length > 18)
-        {
-            hint = string.Join(' ', words.Take(18));
-        }
-
-        return hint;
+        return words.Length > 18 ? string.Join(' ', words.Take(18)) : hint;
     }
 
     private static string? ReadApiKey()
@@ -363,7 +297,7 @@ Luật bắt buộc:
         return false;
     }
 
-    private static string NormalizeVietnamese(string value)
+    private static string NormalizeForCompare(string value)
     {
         var normalized = value.Normalize(NormalizationForm.FormD);
         var builder = new StringBuilder(normalized.Length);

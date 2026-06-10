@@ -5,7 +5,7 @@ namespace GameServer.Engine;
 public sealed class GameEngine
 {
     public const int RoundSeconds = 60;
-    public const int HintRevealIntervalSeconds = 15;
+    public const int HintReleaseRemainingSeconds = 30;
     public const int MinimumHiddenLettersBeforeReveal = 2;
 
     private readonly GeminiService _geminiService;

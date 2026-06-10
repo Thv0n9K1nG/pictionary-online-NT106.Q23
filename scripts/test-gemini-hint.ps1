@@ -98,7 +98,9 @@ static string RemoveDiacritics(string value)
 '@
 
     Set-Content -Path (Join-Path $tempRoot 'Program.cs') -Value $program -Encoding UTF8
-    dotnet run -- $Word
+    $buildRoot = Join-Path $tempRoot ('build-' + [guid]::NewGuid().ToString('N'))
+    $buildBase = $buildRoot + [System.IO.Path]::DirectorySeparatorChar
+    dotnet run -p:BaseOutputPath=$buildBase -- $Word
 }
 finally {
     Pop-Location

@@ -245,7 +245,6 @@ public sealed class GatewayHandler
             Payload = new
             {
                 roomCode,
-                hint = result.Hint,
                 maskedWord = result.MaskedWord,
                 drawerId = playerId,
                 remainingSeconds = result.RemainingSeconds,
@@ -259,7 +258,7 @@ public sealed class GatewayHandler
             Payload = new { roomCode, remainingSeconds = result.RemainingSeconds }
         }, stream, cancellationToken);
 
-        _ = Task.Run(() => RunRoundLoopAsync(roomCode, result.RoundVersion, stream), CancellationToken.None);
+        _ = Task.Run(() => RunRoundLoopAsync(roomCode, result.RoundVersion, result.Hint, stream), CancellationToken.None);
     }
 
     private async Task HandleDrawAsync(
@@ -397,7 +396,7 @@ public sealed class GatewayHandler
         }
     }
 
-    private async Task RunRoundLoopAsync(string roomCode, int roundVersion, NetworkStream stream)
+    private async Task RunRoundLoopAsync(string roomCode, int roundVersion, string hint, NetworkStream stream)
     {
         try
         {
@@ -420,24 +419,20 @@ public sealed class GatewayHandler
                     Payload = new { roomCode, remainingSeconds }
                 }, stream, CancellationToken.None);
 
-                if (elapsedSeconds < GameEngine.RoundSeconds &&
-                    elapsedSeconds % GameEngine.HintRevealIntervalSeconds == 0)
+                if (remainingSeconds == GameEngine.HintReleaseRemainingSeconds &&
+                    !string.IsNullOrWhiteSpace(hint))
                 {
-                    var reveal = _roomManager.RevealHintLetter(roomCode);
-                    if (reveal is not null)
+                    await SendRoomEventAsync(roomCode, new GameMessage
                     {
-                        await SendTargetedRoomEventAsync(roomCode, reveal.GuesserSessionIds, new GameMessage
+                        Type = MessageType.Chat,
+                        Payload = new
                         {
-                            Type = MessageType.Hint,
-                            Payload = new
-                            {
-                                roomCode,
-                                maskedWord = reveal.MaskedWord,
-                                remainingSeconds,
-                                drawerId = reveal.Room.CurrentDrawerId
-                            }
-                        }, stream, CancellationToken.None);
-                    }
+                            roomCode,
+                            text = $"[GỢI Ý] {hint}",
+                            senderName = "GỢI Ý",
+                            isSystem = true
+                        }
+                    }, stream, CancellationToken.None);
                 }
             }
 
