@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Windows.Forms;
 using Siticone.Desktop.UI.WinForms;
 
@@ -58,6 +59,50 @@ public static class AppTheme
     {
         form.BackColor = DarkBg;
         form.ForeColor = Text;
+    }
+
+    public static void ApplyDoodleBackground(Form form)
+    {
+        try
+        {
+            var bgPath = TryGetAssetPath("doodle_bg.png", "doodle_bg.jpg");
+            if (string.IsNullOrWhiteSpace(bgPath))
+            {
+                return;
+            }
+
+            using var img = Image.FromFile(bgPath);
+            var bmp = new Bitmap(img.Width, img.Height);
+            using var g = Graphics.FromImage(bmp);
+
+            g.Clear(DarkBg);
+
+            var colorMatrix = new ColorMatrix { Matrix33 = 0.08f };
+            using var imgAttributes = new ImageAttributes();
+            imgAttributes.SetColorMatrix(
+                colorMatrix,
+                ColorMatrixFlag.Default,
+                ColorAdjustType.Bitmap);
+
+            g.DrawImage(
+                img,
+                new Rectangle(0, 0, bmp.Width, bmp.Height),
+                0,
+                0,
+                img.Width,
+                img.Height,
+                GraphicsUnit.Pixel,
+                imgAttributes);
+
+            var oldBackground = form.BackgroundImage;
+            form.BackgroundImage = bmp;
+            form.BackgroundImageLayout = ImageLayout.Tile;
+            oldBackground?.Dispose();
+        }
+        catch
+        {
+            // Decorative only; keep the form usable if the asset cannot be loaded.
+        }
     }
 
     public static string? TryGetAssetPath(params string[] fileNames)

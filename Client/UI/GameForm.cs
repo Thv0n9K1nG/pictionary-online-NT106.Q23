@@ -61,6 +61,7 @@ public sealed class GameForm : Form
 
         // CẬP NHẬT: Sử dụng Dark theme cho Form thay vì mã màu nền sáng cũ
         AppTheme.ApplyDarkForm(this);
+        AppTheme.ApplyDoodleBackground(this);
 
         _borderlessForm = new SiticoneBorderlessForm()
         {

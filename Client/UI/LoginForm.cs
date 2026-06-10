@@ -5,7 +5,6 @@ using Shared.Enums;
 using Siticone.Desktop.UI.WinForms;
 using System;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -32,6 +31,7 @@ public sealed class LoginForm : Form
         StartPosition = FormStartPosition.CenterScreen;
 
         AppTheme.ApplyDarkForm(this);
+        AppTheme.ApplyDoodleBackground(this);
 
         _borderlessForm = new SiticoneBorderlessForm
         {
@@ -284,7 +284,6 @@ public sealed class LoginForm : Form
         Controls.Add(loginButton);
         Controls.Add(registerButton);
         Controls.Add(exitGameButton);
-        SetupDoodleBackground();
 
         void OpenLobbyOnce()
         {
@@ -356,31 +355,5 @@ public sealed class LoginForm : Form
         }
 
         BeginInvoke(update);
-    }
-
-    private void SetupDoodleBackground()
-    {
-        try
-        {
-            var bgPath = AppTheme.TryGetAssetPath("doodle_bg.png");
-            if (!string.IsNullOrWhiteSpace(bgPath))
-            {
-                using var img = Image.FromFile(bgPath);
-                var bmp = new Bitmap(img.Width, img.Height);
-                using var g = Graphics.FromImage(bmp);
-
-                g.Clear(AppTheme.DarkBg);
-
-                var colorMatrix = new System.Drawing.Imaging.ColorMatrix { Matrix33 = 0.08f };
-                var imgAttributes = new System.Drawing.Imaging.ImageAttributes();
-                imgAttributes.SetColorMatrix(colorMatrix, System.Drawing.Imaging.ColorMatrixFlag.Default, System.Drawing.Imaging.ColorAdjustType.Bitmap);
-
-                g.DrawImage(img, new Rectangle(0, 0, bmp.Width, bmp.Height), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, imgAttributes);
-
-                this.BackgroundImage = bmp;
-                this.BackgroundImageLayout = ImageLayout.Tile;
-            }
-        }
-        catch { }
     }
 }

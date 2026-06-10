@@ -19,6 +19,7 @@ public sealed class GatewayConnectionForm : Form
         StartPosition = FormStartPosition.CenterScreen;
 
         AppTheme.ApplyDarkForm(this);
+        AppTheme.ApplyDoodleBackground(this);
 
         _borderlessForm = new SiticoneBorderlessForm
         {

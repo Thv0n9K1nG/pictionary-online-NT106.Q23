@@ -21,6 +21,7 @@ public sealed class SplashForm : Form
         FormBorderStyle = FormBorderStyle.None;
 
         AppTheme.ApplyDarkForm(this);
+        AppTheme.ApplyDoodleBackground(this);
 
         _ = new SiticoneBorderlessForm { ContainerControl = this, BorderRadius = 15 };
 
@@ -71,8 +72,6 @@ public sealed class SplashForm : Form
         _progressBar.Value = 0;
         Controls.Add(_progressBar);
 
-        SetupDoodleBackground();
-
         _loadingTimer.Interval = 20;
         _loadingTimer.Tick += LoadingTimer_Tick;
         _loadingTimer.Start();
@@ -91,45 +90,6 @@ public sealed class SplashForm : Form
         else
         {
             _progressBar.Value = _progressValue;
-        }
-    }
-
-    private void SetupDoodleBackground()
-    {
-        try
-        {
-            var bgPath = AppTheme.TryGetAssetPath("doodle_bg.png");
-            if (!string.IsNullOrWhiteSpace(bgPath))
-            {
-                using var img = Image.FromFile(bgPath);
-                var bmp = new Bitmap(img.Width, img.Height);
-                using var g = Graphics.FromImage(bmp);
-
-                g.Clear(AppTheme.DarkBg);
-
-                var colorMatrix = new System.Drawing.Imaging.ColorMatrix { Matrix33 = 0.08f };
-                var imgAttributes = new System.Drawing.Imaging.ImageAttributes();
-                imgAttributes.SetColorMatrix(
-                    colorMatrix,
-                    System.Drawing.Imaging.ColorMatrixFlag.Default,
-                    System.Drawing.Imaging.ColorAdjustType.Bitmap);
-
-                g.DrawImage(
-                    img,
-                    new Rectangle(0, 0, bmp.Width, bmp.Height),
-                    0,
-                    0,
-                    img.Width,
-                    img.Height,
-                    GraphicsUnit.Pixel,
-                    imgAttributes);
-
-                BackgroundImage = bmp;
-                BackgroundImageLayout = ImageLayout.Tile;
-            }
-        }
-        catch
-        {
         }
     }
 }

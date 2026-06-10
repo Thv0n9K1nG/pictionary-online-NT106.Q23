@@ -17,6 +17,7 @@ public sealed class WordSelectionForm : Form
         StartPosition = FormStartPosition.CenterParent;
 
         AppTheme.ApplyDarkForm(this);
+        AppTheme.ApplyDoodleBackground(this);
 
         _borderlessForm = new SiticoneBorderlessForm
         {

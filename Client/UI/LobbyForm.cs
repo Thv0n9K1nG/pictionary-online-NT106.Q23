@@ -5,7 +5,6 @@ using Shared.Enums;
 using Shared.Models;
 using System;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Siticone.Desktop.UI.WinForms;
@@ -41,6 +40,7 @@ public sealed class LobbyForm : Form
         StartPosition = FormStartPosition.CenterScreen;
 
         AppTheme.ApplyDarkForm(this);
+        AppTheme.ApplyDoodleBackground(this);
 
         _borderlessForm = new SiticoneBorderlessForm()
         {
@@ -139,7 +139,6 @@ public sealed class LobbyForm : Form
         Controls.Add(logoutButton); Controls.Add(historyButton); Controls.Add(roomLabel); Controls.Add(roomPanel); Controls.Add(playerLabel); Controls.Add(playerPanel); Controls.Add(openGameButton);
 
         // --- LOAD VÀ XỬ LÝ ẢNH NỀN ---
-        SetupDoodleBackground();
         AppTheme.ApplyCornerLogo(this, "TopRight");
         void SetOpenGameButtonState() { openGameButton.Enabled = !string.IsNullOrWhiteSpace(_state.RoomCode); }
         async Task SendCreateRoomAsync() { if (!EnsureLoggedIn()) return; _statusLabel.Text = "Đang tạo phòng..."; await _socketService.SendAsync(GameMessageFactory.CreateRoom(GetPlayerName(), _state.SessionId!)); }
@@ -251,32 +250,4 @@ public sealed class LobbyForm : Form
 
     private void RenderRoomList() { _roomList.Items.Clear(); foreach (var room in _state.RoomList) _roomList.Items.Add(room); _roomList.DisplayMember = nameof(RoomInfo.RoomCode); }
     private void RenderPlayerList() { _playerList.Items.Clear(); foreach (var player in _state.PlayerList) _playerList.Items.Add($"🎨 {player.DisplayName} (Điểm: {player.Score}){(player.IsReady ? " - Sẵn sàng" : string.Empty)}"); }
-
-    private void SetupDoodleBackground()
-    {
-        try
-        {
-            var bgPath = AppTheme.TryGetAssetPath("doodle_bg.png", "doodle_bg.jpg");
-            if (string.IsNullOrWhiteSpace(bgPath)) return;
-
-            Image original = Image.FromFile(bgPath);
-
-            Bitmap bmp = new Bitmap(original.Width, original.Height);
-            using (Graphics g = Graphics.FromImage(bmp))
-            {
-                // Tự động dùng màu nền hệ thống cho Doodle để đồng bộ
-                g.Clear(AppTheme.DarkBg);
-
-                ColorMatrix matrix = new ColorMatrix { Matrix33 = 0.08f }; // Mờ 8% để hài hòa
-                ImageAttributes attributes = new ImageAttributes();
-                attributes.SetColorMatrix(matrix, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
-
-                g.DrawImage(original, new Rectangle(0, 0, bmp.Width, bmp.Height), 0, 0, original.Width, original.Height, GraphicsUnit.Pixel, attributes);
-            }
-
-            this.BackgroundImage = bmp;
-            this.BackgroundImageLayout = ImageLayout.Tile;
-        }
-        catch { }
-    }
 }
