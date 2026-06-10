@@ -1,3 +1,5 @@
+using System.Drawing;
+using System.Windows.Forms;
 using Client.Utils;
 using Siticone.Desktop.UI.WinForms;
 
@@ -6,13 +8,14 @@ namespace Client.UI;
 public sealed class GatewayConnectionForm : Form
 {
     private readonly Label _statusLabel;
+    private readonly PictureBox _logoBox;
     private readonly SiticoneBorderlessForm _borderlessForm;
 
     public GatewayConnectionForm()
     {
         Text = "Pictionary Online - Connecting";
-        Width = 460;
-        Height = 320;
+        Width = 550;
+        Height = 430;
         StartPosition = FormStartPosition.CenterScreen;
 
         AppTheme.ApplyDarkForm(this);
@@ -25,15 +28,28 @@ public sealed class GatewayConnectionForm : Form
 
         _ = new SiticoneDragControl { TargetControl = this };
 
-        var title = new Label
+        _logoBox = new PictureBox
         {
-            Text = "Pictionary Online",
-            AutoSize = true,
-            Font = AppTheme.TitleFont,
-            ForeColor = AppTheme.Primary,
-            Left = 30,
-            Top = 24
+            Width = 410,
+            Height = 250,
+            Left = (ClientSize.Width - 410) / 2,
+            Top = 36,
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.Transparent
         };
+
+        try
+        {
+            var logoPath = AppTheme.TryGetAssetPath("logo.png");
+            if (!string.IsNullOrWhiteSpace(logoPath))
+            {
+                _logoBox.Image = Image.FromFile(logoPath);
+            }
+        }
+        catch
+        {
+            // Keep the connection form usable even if the optional logo cannot be loaded.
+        }
 
         _statusLabel = new Label
         {
@@ -42,27 +58,37 @@ public sealed class GatewayConnectionForm : Form
             Font = AppTheme.NormalFont,
             ForeColor = AppTheme.Primary,
             TextAlign = ContentAlignment.MiddleCenter,
-            Left = 30,
-            Top = 245,
-            Width = 390,
-            Height = 32
+            Left = 55,
+            Top = 305,
+            Width = 440,
+            Height = 32,
+            BackColor = Color.Transparent
         };
 
         var exitGameButton = new SiticoneButton
         {
             Text = "Thoát game",
-            Left = 165,
-            Top = 282,
-            Width = 130,
-            Height = 34,
+            Left = 185,
+            Top = 355,
+            Width = 180,
+            Height = 42,
             Cursor = Cursors.Hand
         };
         AppTheme.StyleDangerButton(exitGameButton);
-        exitGameButton.Click += (_, _) => Application.Exit();
+        exitGameButton.Click += (_, _) =>
+        {
+            using var confirm = new ExitGameConfirmForm();
+            if (confirm.ShowDialog(this) == DialogResult.OK)
+            {
+                Application.Exit();
+            }
+        };
 
-        Controls.Add(title);
+        Controls.Add(_logoBox);
         Controls.Add(_statusLabel);
         Controls.Add(exitGameButton);
+
+        FormClosed += (_, _) => _logoBox.Image?.Dispose();
     }
 
     public void SetStatus(string status, Color color)
