@@ -32,7 +32,7 @@ public sealed class GatewayConnectionForm : Form
         {
             Width = 410,
             Height = 250,
-            Left = (ClientSize.Width - 410) / 2,
+            Left = (ClientSize.Width - 380) / 2,
             Top = 36,
             SizeMode = PictureBoxSizeMode.Zoom,
             BackColor = Color.Transparent
