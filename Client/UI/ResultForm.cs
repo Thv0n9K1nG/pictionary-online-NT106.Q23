@@ -24,7 +24,6 @@ public sealed class ResultForm : Form
         StartPosition = FormStartPosition.CenterParent;
 
         AppTheme.ApplyDarkForm(this);
-        AppTheme.ApplyDoodleBackground(this);
 
         _borderlessForm = new SiticoneBorderlessForm
         {

@@ -17,7 +17,6 @@ public sealed class ExitGameConfirmForm : Form
         StartPosition = FormStartPosition.CenterParent;
 
         AppTheme.ApplyDarkForm(this);
-        AppTheme.ApplyDoodleBackground(this);
 
         _borderlessForm = new SiticoneBorderlessForm
         {
@@ -60,7 +59,7 @@ public sealed class ExitGameConfirmForm : Form
 
         var exitButton = new SiticoneButton
         {
-            Text = "Thoát game",
+            Text = "Thoát",
             Left = 220,
             Top = 115,
             Width = 140,
