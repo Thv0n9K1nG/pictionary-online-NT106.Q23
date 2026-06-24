@@ -13,7 +13,7 @@ public sealed class ClientState
     public string? PlayerId { get; set; }
     public string? Username { get; set; }
     public string? RoomCode { get; set; }
-    public string GatewayHost { get; set; } = "127.0.0.1";
+    public string GatewayHost { get; set; } = "20.204.28.231";
     public int GatewayPort { get; set; } = 5000;
     public ClientConnectionState ConnectionState => _connectionState;
     public GameState CurrentGameState { get; set; } = GameState.Waiting;
