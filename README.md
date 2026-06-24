@@ -1,11 +1,8 @@
-<p align="center">
-  <img 
-    src="Project_General.png" 
-    alt="Pictionary Online general" 
-    width="720" 
-    style="border-radius: 50%;" 
-  />
-</p>
+<div align="center">
+  <div style="border-radius: 16px; overflow: hidden; display: inline-block;">
+    <img src="Project_General.png" alt="Pictionary Online general" width="720" />
+  </div>
+</div>
 
 # Pictionary Online
 
