@@ -9,6 +9,7 @@ namespace GameServer.Services;
 public sealed class GeminiService
 {
     private const string DefaultModel = "gemini-2.5-flash";
+    private const int MaxLoggedTextLength = 240;
     private static readonly ConcurrentDictionary<string, string> HintCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string[] FallbackHints =
     [
@@ -47,32 +48,41 @@ public sealed class GeminiService
     {
         if (string.IsNullOrWhiteSpace(word))
         {
+            Console.WriteLine("[GameServer][Gemini] Hint skipped: empty word. Using fallback.");
             return CreateFallbackHint(word);
         }
 
         var cacheKey = NormalizeForCompare(word);
         if (HintCache.TryGetValue(cacheKey, out var cachedHint))
         {
+            Console.WriteLine($"[GameServer][Gemini] Hint cache hit for word='{word}'. hint='{TrimForLog(cachedHint)}'");
             return cachedHint;
         }
 
         if (!IsConfigured)
         {
+            Console.WriteLine($"[GameServer][Gemini] Hint skipped for word='{word}': API key is not configured. Using fallback.");
             return CacheFallback(cacheKey, word);
         }
 
         try
         {
+            Console.WriteLine($"[GameServer][Gemini] Fetching hint from Gemini. model='{_model}', word='{word}'");
             var hint = await RequestHintAsync(word, cancellationToken);
+            Console.WriteLine($"[GameServer][Gemini] Gemini hint result for word='{word}': '{TrimForLog(hint)}'");
             if (IsUsableHint(hint, word))
             {
                 HintCache[cacheKey] = hint!;
+                Console.WriteLine($"[GameServer][Gemini] Accepted hint for word='{word}'.");
                 return hint!;
             }
+
+            Console.WriteLine($"[GameServer][Gemini] Rejected Gemini hint for word='{word}': empty, too short, or reveals the answer. Using fallback.");
         }
-        catch
+        catch (Exception ex)
         {
             // Gemini hints are optional; local fallback keeps gameplay moving.
+            Console.WriteLine($"[GameServer][Gemini] Hint fetch failed for word='{word}': {ex.GetType().Name}: {ex.Message}. Using fallback.");
         }
 
         return CacheFallback(cacheKey, word);
@@ -107,13 +117,14 @@ public sealed class GeminiService
         httpRequest.Content = JsonContent.Create(request);
 
         using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
+        Console.WriteLine($"[GameServer][Gemini] HTTP {(int)response.StatusCode} {response.ReasonPhrase}. body='{TrimForLog(responseText)}'");
         if (!response.IsSuccessStatusCode)
         {
             return null;
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        using var document = JsonDocument.Parse(responseText);
         return ExtractText(document.RootElement);
     }
 
@@ -161,7 +172,19 @@ Chỉ trả về một câu tiếng Việt tự nhiên, 7-14 từ.
     {
         var fallback = CreateFallbackHint(word);
         HintCache[cacheKey] = fallback;
+        Console.WriteLine($"[GameServer][Gemini] Fallback hint for word='{word}': '{TrimForLog(fallback)}'");
         return fallback;
+    }
+
+    private static string TrimForLog(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var compact = Regex.Replace(value.Trim(), @"\s+", " ");
+        return compact.Length <= MaxLoggedTextLength ? compact : compact[..MaxLoggedTextLength] + "...";
     }
 
     private static string CreateFallbackHint(string word)

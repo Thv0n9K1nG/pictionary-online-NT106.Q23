@@ -248,6 +248,8 @@ public sealed class GatewayServer
             return;
         }
 
+        LogHintRelay(roomCode, message);
+
         IReadOnlyList<Handlers.ClientHandler> targets;
         if (TryGetPropertyIgnoreCase(payload, "targetSessionIds", out var targetSessionIdsElement) &&
             targetSessionIdsElement.ValueKind == JsonValueKind.Array)
@@ -277,6 +279,33 @@ public sealed class GatewayServer
             _clientConnections.RemoveRoom(roomCode);
             _roomDirectory.Remove(roomCode);
         }
+    }
+
+    private static void LogHintRelay(string roomCode, GameMessage message)
+    {
+        if (message.Type == MessageType.Hint)
+        {
+            Console.WriteLine($"[Gateway][Hint] Relaying Hint event for room {roomCode}. payload={SerializeForLog(message.Payload)}");
+            return;
+        }
+
+        if (message.Type == MessageType.Chat &&
+            TryGetPropertyIgnoreCase(JsonSerializer.SerializeToElement(message.Payload, MessageJsonOptions), "isSystem", out var isSystemElement) &&
+            isSystemElement.ValueKind == JsonValueKind.True)
+        {
+            Console.WriteLine($"[Gateway][Hint] Relaying system hint/chat for room {roomCode}. payload={SerializeForLog(message.Payload)}");
+        }
+    }
+
+    private static string SerializeForLog(object? value)
+    {
+        if (value is null)
+        {
+            return "{}";
+        }
+
+        var json = JsonSerializer.Serialize(value, MessageJsonOptions);
+        return json.Length <= 500 ? json : json[..500] + "...";
     }
 
     private async Task HandleMatchResultAsync(JsonElement payload, CancellationToken cancellationToken)
