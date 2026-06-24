@@ -70,14 +70,14 @@ public sealed class GeminiService
             Console.WriteLine($"[GameServer][Gemini] Fetching hint from Gemini. model='{_model}', word='{word}'");
             var hint = await RequestHintAsync(word, cancellationToken);
             Console.WriteLine($"[GameServer][Gemini] Gemini hint result for word='{word}': '{TrimForLog(hint)}'");
-            if (IsUsableHint(hint, word))
+            if (!string.IsNullOrWhiteSpace(hint))
             {
                 HintCache[cacheKey] = hint!;
                 Console.WriteLine($"[GameServer][Gemini] Accepted hint for word='{word}'.");
                 return hint!;
             }
 
-            Console.WriteLine($"[GameServer][Gemini] Rejected Gemini hint for word='{word}': empty, too short, or reveals the answer. Using fallback.");
+            Console.WriteLine($"[GameServer][Gemini] Empty Gemini hint for word='{word}'. Using fallback.");
         }
         catch (Exception ex)
         {
@@ -193,32 +193,6 @@ Chỉ trả về một câu tiếng Việt tự nhiên, 7-14 từ.
         var hash = normalized.Aggregate(17, (current, ch) => current * 31 + ch);
         var index = Math.Abs(hash) % FallbackHints.Length;
         return FallbackHints[index];
-    }
-
-    private static bool IsUsableHint(string? hint, string word)
-    {
-        if (string.IsNullOrWhiteSpace(hint))
-        {
-            return false;
-        }
-
-        var words = hint.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (hint.Length < 12 || words.Length < 4)
-        {
-            return false;
-        }
-
-        var normalizedHint = NormalizeForCompare(hint);
-        var normalizedWord = NormalizeForCompare(word);
-        if (normalizedHint.Contains(normalizedWord, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return !normalizedWord
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Where(token => token.Length >= 3)
-            .Any(token => normalizedHint.Contains(token, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string CleanHint(string? raw)
