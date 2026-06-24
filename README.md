@@ -3,7 +3,7 @@
     src="Project_General.png" 
     alt="Pictionary Online general" 
     width="720" 
-    style="border-radius: 24px;" 
+    style="border-radius: 50%;" 
   />
 </p>
 
