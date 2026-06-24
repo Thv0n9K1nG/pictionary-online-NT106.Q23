@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Project_General.png" alt="Pictionary Online General" width="180" />
+  <img src="Project_General.png" alt="Pictionary Online general" width="640" />
 </p>
 
 # Pictionary Online
